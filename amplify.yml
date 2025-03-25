@@ -18,6 +18,9 @@ backend:
         - sudo rm -rf /usr/local/go
         - sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
         - export PATH=$PATH:/usr/local/go/bin
+        - export GOPATH=$HOME/go
+        - export GOMODCACHE=$HOME/go/pkg/mod
+        - mkdir -p $HOME/go/pkg/mod
         - go version
     build:
       commands:
