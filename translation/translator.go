@@ -18,23 +18,23 @@ type Translator struct {
 func NewTranslator() (*Translator, error) {
 	log.Println("Initializing AWS Translate client...")
 	
-	// Get credentials from environment variables
-	accessKeyID := os.Getenv("AWS_ACCESS_KEY_ID")
-	secretAccessKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
-	region := os.Getenv("AWS_REGION")
+	// Get AWS credentials from environment variables
+	accessKeyID := os.Getenv("TRANSLATE_ACCESS_KEY_ID")
+	secretAccessKey := os.Getenv("TRANSLATE_SECRET_ACCESS_KEY")
+	region := os.Getenv("TRANSLATE_REGION")
 
 	if accessKeyID == "" || secretAccessKey == "" || region == "" {
 		return nil, fmt.Errorf("AWS credentials not found in environment variables")
 	}
 
-	// Create credentials provider
+	// Create static credentials provider
 	creds := credentials.NewStaticCredentialsProvider(
 		accessKeyID,
 		secretAccessKey,
 		"",
 	)
 
-	// Load configuration with credentials
+	// Load AWS configuration
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
 		config.WithRegion(region),
 		config.WithCredentialsProvider(creds),
@@ -44,6 +44,7 @@ func NewTranslator() (*Translator, error) {
 		return nil, fmt.Errorf("unable to load AWS SDK config: %v", err)
 	}
 
+	// Create Translate client
 	client := translate.NewFromConfig(cfg)
 	log.Println("AWS Translate client initialized successfully")
 	return &Translator{

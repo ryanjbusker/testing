@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -17,7 +19,7 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for development
+		return true // Allow all origins in production
 	},
 }
 
@@ -41,14 +43,14 @@ var hub *websocket.Hub
 func init() {
 	// Load environment variables first
 	if err := godotenv.Load(); err != nil {
-		log.Printf("Warning: .env file not found")
+		log.Println("Warning: .env file not found")
 	}
 
 	// Initialize translator
 	var err error
 	translator, err = translation.NewTranslator()
 	if err != nil {
-		log.Fatal("Failed to initialize translator:", err)
+		log.Fatalf("Failed to initialize translator: %v", err)
 	}
 
 	// Initialize WebSocket hub

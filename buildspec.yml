@@ -1,0 +1,21 @@
+version: 1
+phases:
+  install:
+    runtime-versions:
+      go: 1.21
+    commands:
+      - go mod download
+  build:
+    commands:
+      - go build -o main
+  post_build:
+    commands:
+      - echo "Build completed"
+artifacts:
+  files:
+    - '**/*'
+  base-directory: '.'
+cache:
+  paths:
+    - go.sum
+    - go.mod 

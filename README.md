@@ -51,7 +51,43 @@ go run main.go
 
 ## Deployment
 
-### Option 1: Heroku
+### Option 1: AWS Amplify
+
+1. Install the AWS Amplify CLI:
+```bash
+npm install -g @aws-amplify/cli
+```
+
+2. Configure Amplify:
+```bash
+amplify configure
+```
+
+3. Initialize Amplify in your project:
+```bash
+amplify init
+```
+
+4. Add hosting:
+```bash
+amplify add hosting
+```
+
+5. Set up environment variables in AWS Amplify Console:
+   - Go to AWS Amplify Console
+   - Select your app
+   - Go to App settings > Environment variables
+   - Add the following variables:
+     - AWS_ACCESS_KEY_ID
+     - AWS_SECRET_ACCESS_KEY
+     - AWS_REGION
+
+6. Deploy:
+```bash
+amplify publish
+```
+
+### Option 2: Heroku
 
 1. Install the Heroku CLI
 2. Login to Heroku:
@@ -76,7 +112,7 @@ heroku config:set AWS_REGION=your_aws_region
 git push heroku main
 ```
 
-### Option 2: DigitalOcean App Platform
+### Option 3: DigitalOcean App Platform
 
 1. Create a new app in DigitalOcean App Platform
 2. Connect your GitHub repository
@@ -86,7 +122,7 @@ git push heroku main
    - AWS_REGION
 4. Deploy the app
 
-### Option 3: AWS Elastic Beanstalk
+### Option 4: AWS Elastic Beanstalk
 
 1. Install the AWS CLI and EB CLI
 2. Initialize EB:

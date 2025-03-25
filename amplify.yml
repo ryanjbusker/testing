@@ -1,0 +1,15 @@
+version: 1
+backend:
+  phases:
+    build:
+      commands:
+        - go mod download
+        - go build -o main
+  artifacts:
+    baseDirectory: .
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - go.sum
+      - go.mod 
