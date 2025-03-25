@@ -36,10 +36,10 @@ func init() {
 func main() {
 	router := gin.Default()
 
-	// Serve static files
+	// Serve static files from the static directory
 	router.Static("/static", "./static")
 
-	// Load all HTML templates
+	// Load all HTML templates from the templates directory
 	router.LoadHTMLGlob("templates/*.html")
 
 	// Routes
