@@ -4,50 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Speaker Page - Live Translation</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <div class="max-w-2xl mx-auto">
-            <h1 class="text-3xl font-bold mb-6">Speaker Page</h1>
-            
-            <div class="bg-white rounded-lg shadow-lg p-6">
-                <div class="mb-6">
-                    <label class="block text-gray-700 text-sm font-bold mb-2" for="sourceLanguage">
-                        Your Language
-                    </label>
-                    <select id="sourceLanguage" class="w-full p-2 border rounded">
-                        <option value="en-US">English (US)</option>
-                        <option value="es-ES">Spanish</option>
-                        <option value="fr-FR">French</option>
-                        <option value="de-DE">German</option>
-                        <option value="it-IT">Italian</option>
-                    </select>
-                </div>
+<body>
+    <div class="container">
+        <h1>Speaker Page</h1>
+        
+        <div class="content-box">
+            <div class="form-group">
+                <label for="sourceLanguage">Your Language</label>
+                <select id="sourceLanguage" class="form-control">
+                    <option value="en-US">English (US)</option>
+                    <option value="es-ES">Spanish</option>
+                    <option value="fr-FR">French</option>
+                    <option value="de-DE">German</option>
+                    <option value="it-IT">Italian</option>
+                </select>
+            </div>
 
-                <div class="mb-6">
-                    <button id="startButton" class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 transition-colors">
-                        Start Speaking
-                    </button>
-                    <button id="stopButton" class="bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600 transition-colors ml-4" disabled>
-                        Stop Speaking
-                    </button>
-                </div>
+            <div class="button-group">
+                <button id="startButton" class="button">Start Speaking</button>
+                <button id="stopButton" class="button button-danger" disabled>Stop Speaking</button>
+            </div>
 
-                <div class="mb-6">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">
-                        Status
-                    </label>
-                    <div id="status" class="text-gray-600">Not connected</div>
-                </div>
+            <div class="form-group">
+                <label>Status</label>
+                <div id="status" class="status-text">Not connected</div>
+            </div>
 
-                <div class="mb-6">
-                    <label class="block text-gray-700 text-sm font-bold mb-2">
-                        Recognized Text
-                    </label>
-                    <div id="recognizedText" class="border p-4 rounded min-h-[100px] bg-gray-50">
-                        Your speech will appear here...
-                    </div>
+            <div class="form-group">
+                <label>Recognized Text</label>
+                <div id="recognizedText" class="text-box">
+                    Your speech will appear here...
                 </div>
             </div>
         </div>
