@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audience Page - Live Translation</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-2xl mx-auto">
+            <h1 class="text-3xl font-bold mb-6">Audience Page</h1>
+            
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="targetLanguage">
+                        Select Your Language
+                    </label>
+                    <select id="targetLanguage" class="w-full p-2 border rounded">
+                        <option value="en-US">English (US)</option>
+                        <option value="es-ES">Spanish</option>
+                        <option value="fr-FR">French</option>
+                        <option value="de-DE">German</option>
+                        <option value="it-IT">Italian</option>
+                    </select>
+                </div>
+
+                <div class="mb-6">
+                    <button id="connectButton" class="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 transition-colors">
+                        Connect to Stream
+                    </button>
+                    <button id="disconnectButton" class="bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600 transition-colors ml-4" disabled>
+                        Disconnect
+                    </button>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">
+                        Status
+                    </label>
+                    <div id="status" class="text-gray-600">Not connected</div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">
+                        Translated Text
+                    </label>
+                    <div id="translatedText" class="border p-4 rounded min-h-[100px] bg-gray-50">
+                        Translated text will appear here...
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">
+                        Audio Controls
+                    </label>
+                    <div class="flex space-x-4">
+                        <button id="playButton" class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 transition-colors" disabled>
+                            Play
+                        </button>
+                        <button id="pauseButton" class="bg-yellow-500 text-white px-6 py-2 rounded hover:bg-yellow-600 transition-colors" disabled>
+                            Pause
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let audioContext = null;
+        let audioQueue = [];
+        let isPlaying = false;
+        let speechSynthesis = window.speechSynthesis;
+        let currentUtterance = null;
+        let lastSpokenText = '';
+        let speechQueue = [];
+        let isSpeaking = false;
+        const connectButton = document.getElementById('connectButton');
+        const disconnectButton = document.getElementById('disconnectButton');
+        const statusDiv = document.getElementById('status');
+        const translatedTextDiv = document.getElementById('translatedText');
+        const targetLanguage = document.getElementById('targetLanguage');
+        const playButton = document.getElementById('playButton');
+        const pauseButton = document.getElementById('pauseButton');
+
+        function speak(text) {
+            // Only speak if the text is different from the last spoken text
+            if (text === lastSpokenText) {
+                return;
+            }
+
+            // Add new text to the queue
+            speechQueue.push(text);
+            
+            // If not currently speaking, start speaking
+            if (!isSpeaking) {
+                speakNextInQueue();
+            }
+        }
+
+        function speakNextInQueue() {
+            if (speechQueue.length === 0) {
+                isSpeaking = false;
+                return;
+            }
+
+            isSpeaking = true;
+            const text = speechQueue.shift();
+            
+            // Cancel any ongoing speech
+            if (currentUtterance) {
+                speechSynthesis.cancel();
+            }
+
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = targetLanguage.value;
+            
+            // Adjust speech parameters for slightly slower but still natural speech
+            utterance.rate = 1.1;  // Reduced from 1.2 to 1.1 for slightly slower speech
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+
+            // Get available voices and select one for the target language
+            const voices = speechSynthesis.getVoices();
+            let selectedVoice = null;
+            
+            // Try to find a voice that matches the exact language code first
+            selectedVoice = voices.find(voice => voice.lang === targetLanguage.value);
+            
+            // If not found, try to match the language code without the region
+            if (!selectedVoice) {
+                const baseLang = targetLanguage.value.split('-')[0];
+                selectedVoice = voices.find(voice => voice.lang.startsWith(baseLang));
+            }
+            
+            // If still not found, use the first available voice
+            if (!selectedVoice && voices.length > 0) {
+                selectedVoice = voices[0];
+            }
+            
+            if (selectedVoice) {
+                utterance.voice = selectedVoice;
+            }
+
+            currentUtterance = utterance;
+            lastSpokenText = text;
+
+            // Keep the quick transitions between phrases
+            utterance.onend = () => {
+                setTimeout(() => {
+                    speakNextInQueue();
+                }, 20); // Keep the quick 20ms delay for smooth transitions
+            };
+
+            speechSynthesis.speak(utterance);
+        }
+
+        // Initialize voices when they become available
+        function initializeVoices() {
+            const voices = speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                // Voices are already loaded
+                console.log('Voices loaded:', voices.map(v => `${v.name} (${v.lang})`));
+            }
+        }
+
+        // Handle voice loading
+        if (speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = initializeVoices;
+        }
+
+        // Initial voice check
+        initializeVoices();
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.host}/ws?role=audience&lang=${targetLanguage.value}`);
+            
+            ws.onopen = () => {
+                statusDiv.textContent = 'Connected';
+                connectButton.disabled = true;
+                disconnectButton.disabled = false;
+                playButton.disabled = false;
+            };
+
+            ws.onclose = () => {
+                statusDiv.textContent = 'Disconnected';
+                connectButton.disabled = false;
+                disconnectButton.disabled = true;
+                playButton.disabled = true;
+                pauseButton.disabled = true;
+            };
+
+            ws.onerror = (error) => {
+                statusDiv.textContent = 'Error: ' + error.message;
+            };
+
+            ws.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                console.log('Received message:', data);
+                
+                if (data.text) {
+                    translatedTextDiv.textContent = data.text;
+                    speak(data.text);
+                }
+            };
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (currentUtterance) {
+                speechSynthesis.cancel();
+            }
+            speechQueue = [];
+            lastSpokenText = '';
+            isSpeaking = false;
+        }
+
+        connectButton.addEventListener('click', connectWebSocket);
+        disconnectButton.addEventListener('click', disconnectWebSocket);
+        targetLanguage.addEventListener('change', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    language: targetLanguage.value
+                }));
+            }
+            // Clear speech queue and reset state when changing language
+            speechQueue = [];
+            if (currentUtterance) {
+                speechSynthesis.cancel();
+            }
+            lastSpokenText = '';
+            isSpeaking = false;
+        });
+
+        playButton.addEventListener('click', () => {
+            if (!isSpeaking) {
+                if (currentUtterance) {
+                    speechSynthesis.resume();
+                }
+                playButton.disabled = true;
+                pauseButton.disabled = false;
+            }
+        });
+
+        pauseButton.addEventListener('click', () => {
+            isSpeaking = false;
+            speechSynthesis.pause();
+            playButton.disabled = false;
+            pauseButton.disabled = true;
+        });
+    </script>
+</body>
+</html> 

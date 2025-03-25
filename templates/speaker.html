@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speaker Page - Live Translation</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-2xl mx-auto">
+            <h1 class="text-3xl font-bold mb-6">Speaker Page</h1>
+            
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="sourceLanguage">
+                        Your Language
+                    </label>
+                    <select id="sourceLanguage" class="w-full p-2 border rounded">
+                        <option value="en-US">English (US)</option>
+                        <option value="es-ES">Spanish</option>
+                        <option value="fr-FR">French</option>
+                        <option value="de-DE">German</option>
+                        <option value="it-IT">Italian</option>
+                    </select>
+                </div>
+
+                <div class="mb-6">
+                    <button id="startButton" class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 transition-colors">
+                        Start Speaking
+                    </button>
+                    <button id="stopButton" class="bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600 transition-colors ml-4" disabled>
+                        Stop Speaking
+                    </button>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">
+                        Status
+                    </label>
+                    <div id="status" class="text-gray-600">Not connected</div>
+                </div>
+
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">
+                        Recognized Text
+                    </label>
+                    <div id="recognizedText" class="border p-4 rounded min-h-[100px] bg-gray-50">
+                        Your speech will appear here...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let recognition = null;
+        let ws = null;
+        let speechBuffer = '';
+        let lastTranslationTime = 0;
+        let lastSentText = '';
+        let isRecognitionActive = false;
+        const TRANSLATION_DEBOUNCE = 1000; // 1 second debounce
+        const RECOGNITION_RESTART_DELAY = 100; // 100ms delay before restarting recognition
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const statusDiv = document.getElementById('status');
+        const recognizedTextDiv = document.getElementById('recognizedText');
+        const sourceLanguage = document.getElementById('sourceLanguage');
+
+        function connectWebSocket() {
+            if (ws) {
+                ws.close();
+            }
+            ws = new WebSocket(`ws://${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`);
+            
+            ws.onopen = () => {
+                statusDiv.textContent = 'Connected';
+                startButton.disabled = false;
+            };
+
+            ws.onclose = () => {
+                statusDiv.textContent = 'Disconnected';
+                startButton.disabled = true;
+                stopButton.disabled = true;
+                // Attempt to reconnect after a delay
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (error) => {
+                statusDiv.textContent = 'Error: ' + error.message;
+            };
+        }
+
+        function startRecognition() {
+            if (!recognition) {
+                recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = sourceLanguage.value;
+
+                recognition.onresult = (event) => {
+                    const transcript = Array.from(event.results)
+                        .map(result => result[0].transcript)
+                        .join('');
+
+                    recognizedTextDiv.textContent = transcript;
+                    
+                    // Only send new text that hasn't been sent before
+                    const newText = transcript.slice(lastSentText.length);
+                    if (newText.trim()) {
+                        // Update speech buffer with only the new text
+                        speechBuffer = newText;
+                        
+                        // Check if enough time has passed since last translation
+                        const now = Date.now();
+                        if (now - lastTranslationTime >= TRANSLATION_DEBOUNCE) {
+                            if (ws && ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({
+                                    text: speechBuffer,
+                                    language: sourceLanguage.value
+                                }));
+                                lastTranslationTime = now;
+                                lastSentText = transcript;
+                            }
+                        }
+                    }
+                };
+
+                recognition.onerror = (event) => {
+                    statusDiv.textContent = 'Error: ' + event.error;
+                    if (isRecognitionActive) {
+                        setTimeout(() => {
+                            recognition.start();
+                        }, RECOGNITION_RESTART_DELAY);
+                    }
+                };
+
+                recognition.onend = () => {
+                    // Restart recognition if it ends unexpectedly
+                    if (isRecognitionActive) {
+                        setTimeout(() => {
+                            recognition.start();
+                        }, RECOGNITION_RESTART_DELAY);
+                    }
+                };
+            }
+
+            isRecognitionActive = true;
+            recognition.start();
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            statusDiv.textContent = 'Speaking...';
+            lastSentText = ''; // Reset last sent text when starting
+        }
+
+        function stopRecognition() {
+            if (recognition) {
+                isRecognitionActive = false;
+                recognition.stop();
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                statusDiv.textContent = 'Stopped';
+                speechBuffer = '';
+                lastSentText = ''; // Reset last sent text when stopping
+            }
+        }
+
+        startButton.addEventListener('click', startRecognition);
+        stopButton.addEventListener('click', stopRecognition);
+        sourceLanguage.addEventListener('change', () => {
+            if (recognition) {
+                recognition.lang = sourceLanguage.value;
+            }
+            lastSentText = ''; // Reset last sent text when changing language
+        });
+
+        connectWebSocket();
+    </script>
+</body>
+</html> 
