@@ -25,9 +25,8 @@ backend:
     build:
       commands:
         - go mod download
-        - go build -o main
-        - mkdir -p static
-        - cp -r templates static ./
+        - chmod +x build.sh
+        - ./build.sh
   artifacts:
     baseDirectory: .
     files:
