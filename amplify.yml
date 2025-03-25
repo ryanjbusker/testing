@@ -26,6 +26,7 @@ backend:
       commands:
         - go mod download
         - go build -o main
+        - mkdir -p static
         - cp -r templates static ./
   artifacts:
     baseDirectory: .
