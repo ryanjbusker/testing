@@ -27,10 +27,14 @@ backend:
         - go mod download
         - chmod +x build.sh
         - ./build.sh
+        - ls -la templates/
+        - ls -la static/
   artifacts:
     baseDirectory: .
     files:
       - '**/*'
+      - '!node_modules/**'
+      - '!amplify/**'
   cache:
     paths:
       - go.sum
