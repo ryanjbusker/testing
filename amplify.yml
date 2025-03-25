@@ -12,6 +12,11 @@ frontend:
     paths: []
 backend:
   phases:
+    preBuild:
+      commands:
+        - curl -OL https://golang.org/dl/go1.22.0.linux-amd64.tar.gz
+        - tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
+        - export PATH=$PATH:/usr/local/go/bin
     build:
       commands:
         - go mod download
