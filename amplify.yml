@@ -27,6 +27,8 @@ backend:
         - go mod download
         - chmod +x build.sh
         - ./build.sh
+        - echo "Creating necessary directories..."
+        - mkdir -p templates static
         - echo "Listing contents of templates directory:"
         - ls -la templates/
         - echo "Listing contents of static directory:"
@@ -41,6 +43,7 @@ backend:
       - '**/*'
       - '!node_modules/**'
       - '!amplify/**'
+      - '!build/**'
   cache:
     paths:
       - go.sum

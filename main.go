@@ -51,6 +51,15 @@ func main() {
 		log.Printf("Files in templates directory:")
 		for _, file := range files {
 			log.Printf("- %s", file.Name())
+			// Read and log the first line of each template file
+			if filepath.Ext(file.Name()) == ".html" {
+				content, err := os.ReadFile(filepath.Join(templatesDir, file.Name()))
+				if err != nil {
+					log.Printf("Error reading %s: %v", file.Name(), err)
+				} else {
+					log.Printf("First line of %s: %s", file.Name(), string(content[:100]))
+				}
+			}
 		}
 	}
 
@@ -59,6 +68,7 @@ func main() {
 
 	// Load all HTML templates from the templates directory
 	router.LoadHTMLGlob("templates/*.html")
+	log.Printf("Loaded templates from %s", templatesDir)
 
 	// Routes
 	router.GET("/", func(c *gin.Context) {
