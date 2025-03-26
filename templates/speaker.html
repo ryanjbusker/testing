@@ -60,8 +60,13 @@
             if (ws) {
                 ws.close();
             }
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`);
+            // Always use wss:// on Render, ws:// only for localhost
+            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const protocol = isLocalhost ? 'ws:' : 'wss:';
+            const wsUrl = `${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`;
+            console.log('Connecting to WebSocket:', wsUrl);
+            
+            ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
                 statusDiv.textContent = 'Connected';
