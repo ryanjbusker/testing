@@ -24,23 +24,33 @@ backend:
         - go version
     build:
       commands:
+        - echo "Setting up directories..."
+        - mkdir -p templates static
+        - echo "Verifying directory structure..."
+        - ls -la templates/
+        - ls -la static/
+        - echo "Downloading dependencies..."
         - go mod download
+        - echo "Building application..."
         - chmod +x build.sh
         - ./build.sh
-        - echo "Creating necessary directories..."
-        - mkdir -p templates static
-        - echo "Listing contents of templates directory:"
+        - echo "Verifying final build state..."
+        - ls -la
+        - echo "Verifying template files..."
         - ls -la templates/
-        - echo "Listing contents of static directory:"
-        - ls -la static/
-        - echo "Verifying template files:"
-        - cat templates/index.html | head -n 1
-        - cat templates/speaker.html | head -n 1
-        - cat templates/audience.html | head -n 1
+        - echo "Content of index.html:"
+        - cat templates/index.html | head -n 5
+        - echo "Content of speaker.html:"
+        - cat templates/speaker.html | head -n 5
+        - echo "Content of audience.html:"
+        - cat templates/audience.html | head -n 5
   artifacts:
     baseDirectory: .
     files:
       - '**/*'
+      - templates/**/*
+      - static/**/*
+      - main
       - '!node_modules/**'
       - '!amplify/**'
       - '!build/**'
