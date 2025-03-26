@@ -53,7 +53,7 @@ func (h *Hub) Run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
-			log.Printf("New client connected - ID: %s, Role: %s, Language: %s", client.ID, client.IsSpeaker, client.Language)
+			
 
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
