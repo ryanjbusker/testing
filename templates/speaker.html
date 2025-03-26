@@ -60,7 +60,8 @@
             if (ws) {
                 ws.close();
             }
-            ws = new WebSocket(`ws://${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`);
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`);
             
             ws.onopen = () => {
                 statusDiv.textContent = 'Connected';
