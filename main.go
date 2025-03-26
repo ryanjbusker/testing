@@ -75,8 +75,22 @@ func main() {
 		})
 	})
 
+	router.GET("/speaker/", func(c *gin.Context) {
+		log.Printf("Serving speaker.html (with trailing slash)")
+		c.HTML(http.StatusOK, "speaker.html", gin.H{
+			"title": "Speaker Page",
+		})
+	})
+
 	router.GET("/audience", func(c *gin.Context) {
 		log.Printf("Serving audience.html")
+		c.HTML(http.StatusOK, "audience.html", gin.H{
+			"title": "Audience Page",
+		})
+	})
+
+	router.GET("/audience/", func(c *gin.Context) {
+		log.Printf("Serving audience.html (with trailing slash)")
 		c.HTML(http.StatusOK, "audience.html", gin.H{
 			"title": "Audience Page",
 		})
