@@ -1,6 +1,6 @@
 :root {
-    --primary-color: #1a237e;
-    --secondary-color: #283593;
+    --primary-color: #111827;
+    --secondary-color: #0f143b;
     --accent-color: #3949ab;
     --text-color: #ffffff;
     --text-secondary: #b3e5fc;
@@ -189,4 +189,84 @@ body {
     .button-group {
         flex-direction: column;
     }
+}
+
+.contact-section {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+    background-color: var(--secondary-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.contact-info {
+    margin: 2rem 0;
+    text-align: left;
+}
+
+.contact-info p {
+    margin: 1rem 0;
+    font-size: 1.2rem;
+    color: var(--text-color);
+}
+
+.contact-info strong {
+    color: var(--text-secondary);
+}
+
+.about-section {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--accent-color);
+}
+
+.section-title {
+    color: var(--text-color);
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.about-text {
+    color: var(--text-color);
+    font-size: 1.1rem;
+    line-height: 1.6;
+}
+
+.password-display {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin: 0.5rem 0;
+    flex-direction: column;
+}
+
+.password-display span {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--text-secondary);
+    background-color: var(--primary-color);
+    padding: 0.5rem 2rem;
+    border-radius: 4px;
+    letter-spacing: 2px;
+    min-width: 120px;
+    text-align: center;
+}
+
+.password-display button {
+    margin-top: 0.5rem;
+}
+
+.form-text {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+    display: block;
+    text-align: center;
+}
+
+input[type="password"] {
+    font-family: monospace;
+    letter-spacing: 2px;
 } 

@@ -7,6 +7,19 @@
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+    <nav class="navbar">
+        <div class="nav-content">
+            <a href="/" class="nav-brand">BMM Translation</a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/speaker">Speaker</a>
+                <a href="/audience">Audience</a>
+                <a href="/streams">Active Streams</a>
+                <a href="/contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
     <div class="container">
         <h1>Speaker Page</h1>
         
@@ -22,8 +35,41 @@
                 </select>
             </div>
 
+            <div class="form-group">
+                <label>Stream Options</label>
+                <div class="button-group">
+                    <button id="createStreamButton" class="button">Create New Stream</button>
+                    <button id="joinStreamButton" class="button">Join Existing Stream</button>
+                </div>
+            </div>
+
+            <div id="streamSetupSection" class="form-group" style="display: none;">
+                <label for="streamName">Stream Name</label>
+                <input type="text" id="streamName" class="form-control" placeholder="Enter a name for your stream">
+                
+                <label for="streamDescription">Stream Description</label>
+                <textarea id="streamDescription" class="form-control" rows="3" placeholder="Describe your stream (optional)"></textarea>
+                
+                <button id="startStreamButton" class="button">Start Stream</button>
+            </div>
+
+            <div id="streamPasswordSection" class="form-group" style="display: none;">
+                <label>Stream Password</label>
+                <div class="password-display">
+                    <span id="streamPassword">12345</span>
+                    <button id="refreshPassword" class="button">Refresh Password</button>
+                </div>
+                <small class="form-text">Share this password with your audience</small>
+            </div>
+
+            <div id="joinStreamSection" class="form-group" style="display: none;">
+                <label for="joinPassword">Enter Stream Password</label>
+                <input type="text" id="joinPassword" class="form-control" maxlength="5" placeholder="Enter 5-digit password" pattern="[0-9]{5}">
+                <button id="connectToStreamButton" class="button">Connect to Stream</button>
+            </div>
+
             <div class="button-group">
-                <button id="startButton" class="button">Start Speaking</button>
+                <button id="startButton" class="button" disabled>Start Speaking</button>
                 <button id="stopButton" class="button button-danger" disabled>Stop Speaking</button>
             </div>
 
@@ -55,35 +101,194 @@
         const statusDiv = document.getElementById('status');
         const recognizedTextDiv = document.getElementById('recognizedText');
         const sourceLanguage = document.getElementById('sourceLanguage');
+        const streamPassword = document.getElementById('streamPassword');
+        const refreshPassword = document.getElementById('refreshPassword');
+        const createStreamButton = document.getElementById('createStreamButton');
+        const joinStreamButton = document.getElementById('joinStreamButton');
+        const streamPasswordSection = document.getElementById('streamPasswordSection');
+        const joinStreamSection = document.getElementById('joinStreamSection');
+        const joinPassword = document.getElementById('joinPassword');
+        const connectToStreamButton = document.getElementById('connectToStreamButton');
+        const streamSetupSection = document.getElementById('streamSetupSection');
+        const streamName = document.getElementById('streamName');
+        const streamDescription = document.getElementById('streamDescription');
+        const startStreamButton = document.getElementById('startStreamButton');
+        let isStreamCreator = false;
+        let isConnecting = false;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 3;
+        const RECONNECT_DELAY = 3000; // 3 seconds
+
+        function generatePassword() {
+            return Math.floor(10000 + Math.random() * 90000).toString();
+        }
+
+        function updatePassword() {
+            const newPassword = generatePassword();
+            streamPassword.textContent = newPassword;
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'password_update',
+                    password: newPassword
+                }));
+            }
+        }
+
+        createStreamButton.addEventListener('click', () => {
+            isStreamCreator = true;
+            streamSetupSection.style.display = 'block';
+            streamPasswordSection.style.display = 'none';
+            joinStreamSection.style.display = 'none';
+        });
+
+        joinStreamButton.addEventListener('click', () => {
+            isStreamCreator = false;
+            streamPasswordSection.style.display = 'none';
+            joinStreamSection.style.display = 'block';
+        });
+
+        connectToStreamButton.addEventListener('click', () => {
+            if (joinPassword.value.length === 5) {
+                isConnecting = false;
+                connectWebSocket();
+            } else {
+                statusDiv.textContent = 'Please enter a valid 5-digit password';
+            }
+        });
+
+        startStreamButton.addEventListener('click', () => {
+            if (streamName.value.trim()) {
+                isConnecting = false;
+                updatePassword();
+                connectWebSocket();
+            } else {
+                statusDiv.textContent = 'Please enter a stream name';
+            }
+        });
 
         function connectWebSocket() {
-            if (ws) {
-                ws.close();
+            if (isConnecting) {
+                console.log('Connection already in progress, resetting state...');
+                isConnecting = false;
+                return;
             }
-            // Always use wss:// on Render, ws:// only for localhost
+
+            if (ws) {
+                console.log('Closing existing connection');
+                ws.close();
+                ws = null;
+            }
+
+            isConnecting = true;
             const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
             const protocol = isLocalhost ? 'ws:' : 'wss:';
-            const wsUrl = `${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`;
+            const password = isStreamCreator ? streamPassword.textContent : joinPassword.value;
+            const wsUrl = `${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}&password=${password}&isCreator=${isStreamCreator}&name=${encodeURIComponent(streamName.value)}&description=${encodeURIComponent(streamDescription.value)}`;
             console.log('Connecting to WebSocket:', wsUrl);
             
-            ws = new WebSocket(wsUrl);
-            
-            ws.onopen = () => {
-                statusDiv.textContent = 'Connected';
-                startButton.disabled = false;
-            };
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('WebSocket connection opened');
+                    isConnecting = false;
+                    reconnectAttempts = 0;
+                    statusDiv.textContent = 'Connecting...';
+                    // Reset UI state
+                    startButton.disabled = true;
+                    stopButton.disabled = true;
+                    createStreamButton.disabled = true;
+                    joinStreamButton.disabled = false;
+                };
 
-            ws.onclose = () => {
-                statusDiv.textContent = 'Disconnected';
-                startButton.disabled = true;
-                stopButton.disabled = true;
-                // Attempt to reconnect after a delay
-                setTimeout(connectWebSocket, 3000);
-            };
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    console.log('Received message:', data);
 
-            ws.onerror = (error) => {
-                statusDiv.textContent = 'Error: ' + error.message;
-            };
+                    if (data.error) {
+                        console.error('Server error:', data.error);
+                        statusDiv.textContent = 'Error: ' + data.error;
+                        isConnecting = false;
+                        resetUI();
+                        return;
+                    }
+
+                    if (data.type === 'connected') {
+                        console.log('Successfully connected to stream');
+                        statusDiv.textContent = isStreamCreator ? 'Stream Created' : 'Connected to Stream';
+                        startButton.disabled = false;
+                        createStreamButton.disabled = true;
+                        joinStreamButton.disabled = true;
+                        streamSetupSection.style.display = 'none';
+                        if (isStreamCreator) {
+                            streamPasswordSection.style.display = 'block';
+                            joinStreamSection.style.display = 'none';
+                            if (data.streamName) {
+                                streamName.value = data.streamName;
+                            }
+                            if (data.streamDesc) {
+                                streamDescription.value = data.streamDesc;
+                            }
+                        } else {
+                            streamPasswordSection.style.display = 'none';
+                            joinStreamSection.style.display = 'none';
+                        }
+                    }
+                };
+
+                ws.onclose = (event) => {
+                    console.log('WebSocket connection closed:', event);
+                    isConnecting = false;
+                    statusDiv.textContent = 'Disconnected';
+                    resetUI();
+                    
+                    // Attempt to reconnect if it was an abnormal closure and we haven't exceeded max attempts
+                    if (event.code === 1006 && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                        console.log(`Attempting to reconnect (attempt ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})...`);
+                        reconnectAttempts++;
+                        setTimeout(() => {
+                            if (!ws || ws.readyState === WebSocket.CLOSED) {
+                                connectWebSocket();
+                            }
+                        }, RECONNECT_DELAY);
+                    } else if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                        console.log('Max reconnection attempts reached');
+                        statusDiv.textContent = 'Connection failed. Please try again.';
+                        isConnecting = false;
+                        createStreamButton.disabled = false;
+                        joinStreamButton.disabled = false;
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    isConnecting = false;
+                    statusDiv.textContent = 'Error: Connection failed';
+                    resetUI();
+                };
+            } catch (error) {
+                console.error('Error creating WebSocket:', error);
+                isConnecting = false;
+                statusDiv.textContent = 'Error: Failed to create connection';
+                resetUI();
+            }
+        }
+
+        function resetUI() {
+            startButton.disabled = true;
+            stopButton.disabled = true;
+            createStreamButton.disabled = false;
+            joinStreamButton.disabled = false;
+            streamSetupSection.style.display = 'none';
+            streamPasswordSection.style.display = 'none';
+            joinStreamSection.style.display = 'none';
+            recognizedTextDiv.textContent = 'Your speech will appear here...';
+            if (recognition) {
+                stopRecognition();
+            }
+            isConnecting = false;
+            reconnectAttempts = 0;
         }
 
         function startRecognition() {
@@ -111,6 +316,7 @@
                         if (now - lastTranslationTime >= TRANSLATION_DEBOUNCE) {
                             if (ws && ws.readyState === WebSocket.OPEN) {
                                 ws.send(JSON.stringify({
+                                    type: "speech",
                                     text: speechBuffer,
                                     language: sourceLanguage.value
                                 }));
@@ -169,7 +375,34 @@
             lastSentText = ''; // Reset last sent text when changing language
         });
 
-        connectWebSocket();
+        // Update the createStream function
+        function createStream() {
+            if (!streamName.value) {
+                alert('Please enter a stream name');
+                return;
+            }
+            isStreamCreator = true;
+            streamPassword.textContent = generatePassword();
+            streamSetupSection.style.display = 'none';
+            streamPasswordSection.style.display = 'block';
+            joinStreamSection.style.display = 'none';
+            isConnecting = false; // Reset connection state
+            connectWebSocket();
+        }
+
+        // Update the joinStream function
+        function joinStream() {
+            if (!joinPassword.value) {
+                alert('Please enter a stream password');
+                return;
+            }
+            isStreamCreator = false;
+            streamSetupSection.style.display = 'none';
+            streamPasswordSection.style.display = 'none';
+            joinStreamSection.style.display = 'none';
+            isConnecting = false; // Reset connection state
+            connectWebSocket();
+        }
     </script>
 </body>
 </html> 

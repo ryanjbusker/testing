@@ -23,12 +23,15 @@ type Client struct {
 	Conn      *websocket.Conn
 	Language  string
 	IsSpeaker bool
+	Password  string
 	Hub       *Hub
 }
 
 type Message struct {
 	Text     string `json:"text"`
 	Language string `json:"language"`
+	Type     string `json:"type"`
+	Password string `json:"password"`
 }
 
 type Hub struct {
@@ -37,6 +40,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	translator *translation.Translator
+	speakers   map[string]string // Maps speaker ID to password
 }
 
 func NewHub() *Hub {
@@ -45,6 +49,7 @@ func NewHub() *Hub {
 		broadcast:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		speakers:   make(map[string]string),
 	}
 }
 
@@ -52,12 +57,37 @@ func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.clients[client] = true
-			
+			if client.IsSpeaker {
+				// Store speaker's password
+				h.speakers[client.ID] = client.Password
+				h.clients[client] = true
+				log.Printf("Speaker connected - ID: %s", client.ID)
+			} else {
+				// Check if audience member's password matches any speaker's password
+				validPassword := false
+				for _, speakerPassword := range h.speakers {
+					if speakerPassword == client.Password {
+						validPassword = true
+						break
+					}
+				}
+
+				if validPassword {
+					h.clients[client] = true
+					log.Printf("Audience member connected - ID: %s", client.ID)
+				} else {
+					log.Printf("Invalid password attempt - ID: %s", client.ID)
+					client.Conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Invalid password"}`))
+					client.Conn.Close()
+				}
+			}
 
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
+				if client.IsSpeaker {
+					delete(h.speakers, client.ID)
+				}
 				client.Conn.Close()
 				log.Printf("Client disconnected - ID: %s", client.ID)
 			}
@@ -88,6 +118,7 @@ func ServeWs(hub *Hub, translator *translation.Translator, w http.ResponseWriter
 		Conn:      conn,
 		Language:  r.URL.Query().Get("lang"),
 		IsSpeaker: r.URL.Query().Get("role") == "speaker",
+		Password:  r.URL.Query().Get("password"),
 		Hub:       hub,
 	}
 
@@ -117,6 +148,24 @@ func (c *Client) readPump() {
 			var msg Message
 			if err := json.Unmarshal(message, &msg); err != nil {
 				log.Printf("Error parsing message: %v", err)
+				continue
+			}
+
+			// Handle password update
+			if msg.Type == "password_update" {
+				oldPassword := c.Hub.speakers[c.ID]
+				c.Hub.speakers[c.ID] = msg.Password
+				log.Printf("Speaker %s updated password from %s to %s", c.ID, oldPassword, msg.Password)
+
+				// Disconnect all audience members with the old password
+				for client := range c.Hub.clients {
+					if !client.IsSpeaker && client.Password == oldPassword {
+						client.Conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Password has been updated. Please reconnect with the new password."}`))
+						client.Conn.Close()
+						delete(c.Hub.clients, client)
+						log.Printf("Disconnected audience member %s due to password update", client.ID)
+					}
+				}
 				continue
 			}
 

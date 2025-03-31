@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Active Streams - Live Translation</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-content">
+            <a href="/" class="nav-brand">BMM Translation</a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/speaker">Speaker</a>
+                <a href="/audience">Audience</a>
+                <a href="/streams">Active Streams</a>
+                <a href="/contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1>Active Streams</h1>
+        
+        <div class="content-box">
+            {{if .streams}}
+                <div class="streams-grid">
+                    {{range .streams}}
+                        <div class="stream-card">
+                            <h3>{{.name}}</h3>
+                            <p class="stream-description">{{.description}}</p>
+                            <div class="stream-stats">
+                                <span>Speakers: {{.speakers}}</span>
+                                <span>Audience: {{.audience}}</span>
+                                <span>Created: {{.created_at.Format "2006-01-02 15:04:05"}}</span>
+                                <span>Password: {{.password}}</span>
+                            </div>
+                            <div class="stream-actions">
+                                <a href="/speaker?stream={{.password}}" class="button">Join as Speaker</a>
+                                <a href="/audience?stream={{.password}}" class="button">Join as Audience</a>
+                            </div>
+                        </div>
+                    {{end}}
+                </div>
+            {{else}}
+                <div class="no-streams">
+                    <p>No active streams at the moment.</p>
+                    <p>To create a new stream:</p>
+                    <ol>
+                        <li>Go to the <a href="/speaker">Speaker Page</a></li>
+                        <li>Click "Create New Stream"</li>
+                        <li>Enter a name for your stream</li>
+                        <li>Click "Start Stream"</li>
+                    </ol>
+                </div>
+            {{end}}
+        </div>
+    </div>
+
+    <style>
+        .streams-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .stream-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stream-card h3 {
+            margin: 0 0 0.5rem 0;
+            color: #333;
+        }
+
+        .stream-description {
+            color: #666;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .stream-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .stream-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .stream-actions .button {
+            flex: 1;
+            text-align: center;
+            text-decoration: none;
+        }
+
+        .no-streams {
+            text-align: center;
+            color: #666;
+            padding: 2rem;
+        }
+    </style>
+</body>
+</html> 

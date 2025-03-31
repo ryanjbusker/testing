@@ -7,6 +7,18 @@
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+    <nav class="navbar">
+        <div class="nav-content">
+            <a href="/" class="nav-brand">BMM Translation</a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/speaker">Speaker</a>
+                <a href="/audience">Audience</a>
+                <a href="/contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
     <div class="container">
         <h1>Audience Page</h1>
         
@@ -22,6 +34,12 @@
                 </select>
             </div>
 
+            <div class="form-group">
+                <label for="streamPassword">Stream Password</label>
+                <input type="text" id="streamPassword" class="form-control" maxlength="5" placeholder="Enter 5-digit password" pattern="[0-9]{5}" required>
+                <small class="form-text">Enter the 5-digit password provided by the speaker</small>
+            </div>
+
             <div class="button-group">
                 <button id="connectButton" class="button">Connect to Stream</button>
                 <button id="disconnectButton" class="button button-danger" disabled>Disconnect</button>
@@ -33,10 +51,13 @@
             </div>
 
             <div class="form-group">
+                <label>Active Speakers</label>
+                <div id="activeSpeakers" class="status-text">No active speakers</div>
+            </div>
+
+            <div class="form-group">
                 <label>Translated Text</label>
-                <div id="translatedText" class="text-box">
-                    Translated text will appear here...
-                </div>
+                <div id="translatedText" class="text-box"></div>
             </div>
 
             <div class="form-group">
@@ -62,10 +83,22 @@
         const connectButton = document.getElementById('connectButton');
         const disconnectButton = document.getElementById('disconnectButton');
         const statusDiv = document.getElementById('status');
+        const activeSpeakersDiv = document.getElementById('activeSpeakers');
         const translatedTextDiv = document.getElementById('translatedText');
         const targetLanguage = document.getElementById('targetLanguage');
+        const streamPassword = document.getElementById('streamPassword');
         const playButton = document.getElementById('playButton');
         const pauseButton = document.getElementById('pauseButton');
+        const stopButton = document.getElementById('stopButton');
+        let activeSpeakers = new Set();
+
+        function updateActiveSpeakers() {
+            if (activeSpeakers.size === 0) {
+                activeSpeakersDiv.textContent = 'No active speakers';
+            } else {
+                activeSpeakersDiv.textContent = `Active Speakers: ${Array.from(activeSpeakers).join(', ')}`;
+            }
+        }
 
         function speak(text) {
             // Only speak if the text is different from the last spoken text
@@ -157,10 +190,13 @@
         initializeVoices();
 
         function connectWebSocket() {
-            // Always use wss:// on Render, ws:// only for localhost
+            if (ws) {
+                ws.close();
+            }
+
             const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
             const protocol = isLocalhost ? 'ws:' : 'wss:';
-            const wsUrl = `${protocol}//${window.location.host}/ws?role=audience&lang=${targetLanguage.value}`;
+            const wsUrl = `${protocol}//${window.location.host}/ws?role=audience&lang=${targetLanguage.value}&password=${streamPassword.value}`;
             console.log('Connecting to WebSocket:', wsUrl);
             
             ws = new WebSocket(wsUrl);
@@ -168,29 +204,40 @@
             ws.onopen = () => {
                 statusDiv.textContent = 'Connected';
                 connectButton.disabled = true;
-                disconnectButton.disabled = false;
-                playButton.disabled = false;
+                streamPassword.disabled = true;
+                targetLanguage.disabled = true;
             };
 
             ws.onclose = () => {
                 statusDiv.textContent = 'Disconnected';
                 connectButton.disabled = false;
-                disconnectButton.disabled = true;
-                playButton.disabled = true;
-                pauseButton.disabled = true;
+                streamPassword.disabled = false;
+                targetLanguage.disabled = false;
+                activeSpeakers.clear();
+                updateActiveSpeakers();
             };
 
             ws.onerror = (error) => {
                 statusDiv.textContent = 'Error: ' + error.message;
+                connectButton.disabled = false;
+                streamPassword.disabled = false;
+                targetLanguage.disabled = false;
             };
 
             ws.onmessage = async (event) => {
                 const data = JSON.parse(event.data);
-                console.log('Received message:', data);
                 
-                if (data.text) {
+                if (data.type === 'translation') {
                     translatedTextDiv.textContent = data.text;
-                    speak(data.text);
+                    if (data.speaker) {
+                        activeSpeakers.add(data.speaker);
+                        updateActiveSpeakers();
+                    }
+                } else if (data.type === 'speaker_left') {
+                    activeSpeakers.delete(data.speaker);
+                    updateActiveSpeakers();
+                } else if (data.type === 'password_updated') {
+                    streamPassword.value = data.password;
                 }
             };
         }
@@ -208,7 +255,13 @@
             isSpeaking = false;
         }
 
-        connectButton.addEventListener('click', connectWebSocket);
+        connectButton.addEventListener('click', () => {
+            if (streamPassword.value.length === 5) {
+                connectWebSocket();
+            } else {
+                statusDiv.textContent = 'Please enter a valid 5-digit password';
+            }
+        });
         disconnectButton.addEventListener('click', disconnectWebSocket);
         targetLanguage.addEventListener('change', () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
