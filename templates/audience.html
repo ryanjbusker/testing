@@ -14,6 +14,7 @@
                 <a href="/">Home</a>
                 <a href="/speaker">Speaker</a>
                 <a href="/audience">Audience</a>
+                <a href="/streams">Active Streams</a>
                 <a href="/contact">Contact</a>
             </div>
         </div>
@@ -32,12 +33,6 @@
                     <option value="de-DE">German</option>
                     <option value="it-IT">Italian</option>
                 </select>
-            </div>
-
-            <div class="form-group">
-                <label for="streamPassword">Stream Password</label>
-                <input type="text" id="streamPassword" class="form-control" maxlength="5" placeholder="Enter 5-digit password" pattern="[0-9]{5}" required>
-                <small class="form-text">Enter the 5-digit password provided by the speaker</small>
             </div>
 
             <div class="button-group">
@@ -59,22 +54,11 @@
                 <label>Translated Text</label>
                 <div id="translatedText" class="text-box"></div>
             </div>
-
-            <div class="form-group">
-                <label>Audio Controls</label>
-                <div class="button-group">
-                    <button id="playButton" class="button" disabled>Play</button>
-                    <button id="pauseButton" class="button button-warning" disabled>Pause</button>
-                </div>
-            </div>
         </div>
     </div>
 
     <script>
         let ws = null;
-        let audioContext = null;
-        let audioQueue = [];
-        let isPlaying = false;
         let speechSynthesis = window.speechSynthesis;
         let currentUtterance = null;
         let lastSpokenText = '';
@@ -86,10 +70,6 @@
         const activeSpeakersDiv = document.getElementById('activeSpeakers');
         const translatedTextDiv = document.getElementById('translatedText');
         const targetLanguage = document.getElementById('targetLanguage');
-        const streamPassword = document.getElementById('streamPassword');
-        const playButton = document.getElementById('playButton');
-        const pauseButton = document.getElementById('pauseButton');
-        const stopButton = document.getElementById('stopButton');
         let activeSpeakers = new Set();
 
         function updateActiveSpeakers() {
@@ -133,7 +113,7 @@
             utterance.lang = targetLanguage.value;
             
             // Adjust speech parameters for slightly slower but still natural speech
-            utterance.rate = 1.1;  // Reduced from 1.2 to 1.1 for slightly slower speech
+            utterance.rate = 1.1;
             utterance.pitch = 1.0;
             utterance.volume = 1.0;
 
@@ -154,7 +134,7 @@
             if (!selectedVoice && voices.length > 0) {
                 selectedVoice = voices[0];
             }
-            
+
             if (selectedVoice) {
                 utterance.voice = selectedVoice;
             }
@@ -166,7 +146,7 @@
             utterance.onend = () => {
                 setTimeout(() => {
                     speakNextInQueue();
-                }, 20); // Keep the quick 20ms delay for smooth transitions
+                }, 20);
             };
 
             speechSynthesis.speak(utterance);
@@ -176,7 +156,6 @@
         function initializeVoices() {
             const voices = speechSynthesis.getVoices();
             if (voices.length > 0) {
-                // Voices are already loaded
                 console.log('Voices loaded:', voices.map(v => `${v.name} (${v.lang})`));
             }
         }
@@ -196,22 +175,22 @@
 
             const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
             const protocol = isLocalhost ? 'ws:' : 'wss:';
-            const wsUrl = `${protocol}//${window.location.host}/ws?role=audience&lang=${targetLanguage.value}&password=${streamPassword.value}`;
+            const wsUrl = `${protocol}//${window.location.host}/ws?role=audience&lang=${targetLanguage.value}`;
             console.log('Connecting to WebSocket:', wsUrl);
-            
+
             ws = new WebSocket(wsUrl);
-            
+
             ws.onopen = () => {
                 statusDiv.textContent = 'Connected';
                 connectButton.disabled = true;
-                streamPassword.disabled = true;
+                disconnectButton.disabled = false;
                 targetLanguage.disabled = true;
             };
 
             ws.onclose = () => {
                 statusDiv.textContent = 'Disconnected';
                 connectButton.disabled = false;
-                streamPassword.disabled = false;
+                disconnectButton.disabled = true;
                 targetLanguage.disabled = false;
                 activeSpeakers.clear();
                 updateActiveSpeakers();
@@ -220,7 +199,7 @@
             ws.onerror = (error) => {
                 statusDiv.textContent = 'Error: ' + error.message;
                 connectButton.disabled = false;
-                streamPassword.disabled = false;
+                disconnectButton.disabled = true;
                 targetLanguage.disabled = false;
             };
 
@@ -233,11 +212,10 @@
                         activeSpeakers.add(data.speaker);
                         updateActiveSpeakers();
                     }
+                    speak(data.text);
                 } else if (data.type === 'speaker_left') {
                     activeSpeakers.delete(data.speaker);
                     updateActiveSpeakers();
-                } else if (data.type === 'password_updated') {
-                    streamPassword.value = data.password;
                 }
             };
         }
@@ -253,15 +231,18 @@
             speechQueue = [];
             lastSpokenText = '';
             isSpeaking = false;
+            
+            // Reset UI elements
+            statusDiv.textContent = 'Not connected';
+            connectButton.disabled = false;
+            disconnectButton.disabled = true;
+            targetLanguage.disabled = false;
+            translatedTextDiv.textContent = '';
+            activeSpeakers.clear();
+            updateActiveSpeakers();
         }
 
-        connectButton.addEventListener('click', () => {
-            if (streamPassword.value.length === 5) {
-                connectWebSocket();
-            } else {
-                statusDiv.textContent = 'Please enter a valid 5-digit password';
-            }
-        });
+        connectButton.addEventListener('click', connectWebSocket);
         disconnectButton.addEventListener('click', disconnectWebSocket);
         targetLanguage.addEventListener('change', () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -278,23 +259,15 @@
             isSpeaking = false;
         });
 
-        playButton.addEventListener('click', () => {
-            if (!isSpeaking) {
-                if (currentUtterance) {
-                    speechSynthesis.resume();
-                }
-                playButton.disabled = true;
-                pauseButton.disabled = false;
+        // Clean up on page unload
+        window.onbeforeunload = function() {
+            if (ws) {
+                ws.close();
             }
-        });
-
-        pauseButton.addEventListener('click', () => {
-            if (isSpeaking) {
-                speechSynthesis.pause();
-                playButton.disabled = false;
-                pauseButton.disabled = true;
+            if (currentUtterance) {
+                speechSynthesis.cancel();
             }
-        });
+        };
     </script>
 </body>
 </html> 

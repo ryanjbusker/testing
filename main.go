@@ -31,7 +31,6 @@ var upgrader = websocket.Upgrader{
 type Stream struct {
 	Speakers    map[string]*Speaker
 	Audience    map[string]*Audience
-	Password    string
 	CreatedAt   time.Time
 	Name        string
 	Description string
@@ -41,7 +40,6 @@ type Stream struct {
 type Speaker struct {
 	Conn       *websocket.Conn
 	Language   string
-	IsCreator  bool
 	LastActive time.Time
 }
 
@@ -52,8 +50,15 @@ type Audience struct {
 }
 
 var (
-	streams = make(map[string]*Stream)
-	mu      sync.RWMutex
+	stream = &Stream{
+		Name:        "Live Translation",
+		Description: "Real-time translation stream",
+		Speakers:    make(map[string]*Speaker),
+		Audience:    make(map[string]*Audience),
+		IsActive:    true,
+		CreatedAt:   time.Now(),
+	}
+	mu sync.RWMutex
 )
 
 func init() {
@@ -152,24 +157,19 @@ func main() {
 	router.GET("/streams", func(c *gin.Context) {
 		mu.RLock()
 		activeStreams := make([]map[string]interface{}, 0)
-		for password, stream := range streams {
-			if stream.IsActive {
-				activeStreams = append(activeStreams, map[string]interface{}{
-					"password":    password,
-					"name":        stream.Name,
-					"description": stream.Description,
-					"speakers":    len(stream.Speakers),
-					"audience":    len(stream.Audience),
-					"created_at":  stream.CreatedAt,
-				})
-			}
-		}
+		activeStreams = append(activeStreams, map[string]interface{}{
+			"name":        stream.Name,
+			"description": stream.Description,
+			"speakers":    len(stream.Speakers),
+			"audience":    len(stream.Audience),
+			"created_at":  stream.CreatedAt,
+		})
 		mu.RUnlock()
 
 		log.Printf("Found %d active streams", len(activeStreams))
 		for _, stream := range activeStreams {
 			log.Printf("Stream: %s, Name: %s, Speakers: %d, Audience: %d",
-				stream["password"], stream["name"], stream["speakers"], stream["audience"])
+				stream["name"], stream["name"], stream["speakers"], stream["audience"])
 		}
 
 		c.HTML(http.StatusOK, "streams.html", gin.H{
@@ -199,89 +199,11 @@ func generatePassword() string {
 	return fmt.Sprintf("%05d", rand.Intn(100000))
 }
 
-func getOrCreateStream(password string) *Stream {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Check if stream exists
-	if stream, exists := streams[password]; exists {
-		log.Printf("Found existing stream with password: %s", password)
-		return stream
-	}
-
-	// Create new stream
-	log.Printf("Creating new stream with password: %s", password)
-	streams[password] = &Stream{
-		Name:        "",
-		Description: "",
-		Speakers:    make(map[string]*Speaker),
-		Audience:    make(map[string]*Audience),
-		IsActive:    true,
-		CreatedAt:   time.Now(),
-	}
-	return streams[password]
-}
-
 func handleWebSocket(c *gin.Context) {
 	role := c.Query("role")
 	lang := c.Query("lang")
-	password := c.Query("password")
-	isCreator := c.Query("isCreator") == "true"
-	streamName := c.Query("name")
-	streamDesc := c.Query("description")
 
-	log.Printf("WebSocket connection request - Role: %s, Password: %s, Creator: %v, Name: %s", role, password, isCreator, streamName)
-
-	if password == "" {
-		log.Printf("Error: Password is required")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Password is required"})
-		return
-	}
-
-	// Get or create stream before WebSocket upgrade
-	stream := getOrCreateStream(password)
-	mu.Lock()
-	defer mu.Unlock()
-
-	// If joining an existing stream, verify it exists and is active
-	if !isCreator {
-		if !stream.IsActive {
-			log.Printf("Attempted to join inactive stream: %s", password)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Stream is not active"})
-			return
-		}
-		log.Printf("Joining existing stream: %s", password)
-	} else {
-		// For new streams, ensure the stream name is unique
-		if streamName != "" {
-			for _, s := range streams {
-				if s.Name == streamName && s != stream {
-					log.Printf("Stream name already in use: %s", streamName)
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Stream name already in use"})
-					return
-				}
-			}
-		}
-		log.Printf("Creating new stream: %s", password)
-	}
-
-	// Update stream info if creator
-	if isCreator {
-		if streamName != "" {
-			stream.Name = streamName
-			log.Printf("Setting stream name to: %s", streamName)
-		} else {
-			stream.Name = "New Stream"
-			log.Printf("Using default stream name: New Stream")
-		}
-		if streamDesc != "" {
-			stream.Description = streamDesc
-			log.Printf("Setting stream description to: %s", streamDesc)
-		}
-		stream.IsActive = true
-		stream.Password = password
-		log.Printf("Stream created: %s (Name: %s, Password: %s)", password, stream.Name, stream.Password)
-	}
+	log.Printf("WebSocket connection request - Role: %s", role)
 
 	// Upgrade the HTTP connection to a WebSocket connection
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -295,7 +217,6 @@ func handleWebSocket(c *gin.Context) {
 	successMsg := map[string]interface{}{
 		"type":       "connected",
 		"role":       role,
-		"isCreator":  isCreator,
 		"streamName": stream.Name,
 		"streamDesc": stream.Description,
 	}
@@ -311,18 +232,17 @@ func handleWebSocket(c *gin.Context) {
 		speaker := &Speaker{
 			Conn:       conn,
 			Language:   lang,
-			IsCreator:  isCreator,
 			LastActive: time.Now(),
 		}
 		stream.Speakers[speakerID] = speaker
-		log.Printf("Added speaker %s to stream %s (Creator: %v)", speakerID, password, isCreator)
+		log.Printf("Added speaker %s", speakerID)
 		defer func() {
 			conn.Close()
 			delete(stream.Speakers, speakerID)
-			log.Printf("Speaker %s left stream %s", speakerID, password)
+			log.Printf("Speaker %s left", speakerID)
 			if len(stream.Speakers) == 0 && len(stream.Audience) == 0 {
 				stream.IsActive = false
-				log.Printf("Stream %s is now inactive", password)
+				log.Printf("Stream is now inactive")
 			}
 			// Notify others that this speaker left
 			if len(stream.Audience) > 0 {
@@ -344,31 +264,30 @@ func handleWebSocket(c *gin.Context) {
 			LastActive: time.Now(),
 		}
 		stream.Audience[audienceID] = audience
-		log.Printf("Added audience member %s to stream %s", audienceID, password)
+		log.Printf("Added audience member %s", audienceID)
 		defer func() {
 			conn.Close()
 			delete(stream.Audience, audienceID)
-			log.Printf("Audience member %s left stream %s", audienceID, password)
+			log.Printf("Audience member %s left", audienceID)
 			if len(stream.Speakers) == 0 && len(stream.Audience) == 0 {
 				stream.IsActive = false
-				log.Printf("Stream %s is now inactive", password)
+				log.Printf("Stream is now inactive")
 			}
 		}()
 	}
 
+	// Handle incoming messages
 	for {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket read error: %v", err)
-			}
+			log.Printf("Error reading message: %v", err)
 			break
 		}
 
 		if messageType == websocket.TextMessage {
 			var data map[string]interface{}
 			if err := json.Unmarshal(message, &data); err != nil {
-				log.Printf("JSON unmarshal error: %v", err)
+				log.Printf("Error parsing message: %v", err)
 				continue
 			}
 
@@ -376,49 +295,22 @@ func handleWebSocket(c *gin.Context) {
 				text := data["text"].(string)
 				speakerID := conn.RemoteAddr().String()
 				speaker := stream.Speakers[speakerID]
-
-				// Broadcast to all audience members
-				for _, audience := range stream.Audience {
-					if audience.Language != speaker.Language {
+				if speaker != nil {
+					// Translate for each audience member
+					for _, audience := range stream.Audience {
 						translatedText, err := translateText(text, speaker.Language, audience.Language)
 						if err != nil {
 							log.Printf("Translation error: %v", err)
 							continue
 						}
-
 						response := map[string]interface{}{
-							"type": "translation",
-							"text": translatedText,
+							"type":     "translation",
+							"text":     translatedText,
+							"speaker":  speakerID,
+							"original": text,
 						}
 						responseJSON, _ := json.Marshal(response)
 						audience.Conn.WriteMessage(websocket.TextMessage, responseJSON)
-					}
-				}
-			} else if data["type"] == "password_update" {
-				// Only allow the stream creator to update the password
-				speakerID := conn.RemoteAddr().String()
-				speaker := stream.Speakers[speakerID]
-				if speaker != nil && speaker.IsCreator {
-					newPassword := data["password"].(string)
-					if newPassword != stream.Password {
-						// Update the stream password
-						stream.Password = newPassword
-						// Notify all speakers and audience about the password update
-						updateMsg := map[string]interface{}{
-							"type":     "password_updated",
-							"password": newPassword,
-						}
-						updateJSON, _ := json.Marshal(updateMsg)
-
-						// Notify all speakers
-						for _, s := range stream.Speakers {
-							s.Conn.WriteMessage(websocket.TextMessage, updateJSON)
-						}
-
-						// Notify all audience members
-						for _, a := range stream.Audience {
-							a.Conn.WriteMessage(websocket.TextMessage, updateJSON)
-						}
 					}
 				}
 			}
