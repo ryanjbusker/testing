@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context" //Added for OAuth
 	"encoding/json"
 	"fmt"
 	"log"
@@ -17,6 +18,12 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/joho/godotenv"
+
+	//The following four lines are added for OAuth
+	// "github.com/gorilla/mux" 
+	"github.com/gorilla/sessions"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 var translator *translation.Translator
@@ -59,6 +66,11 @@ var (
 		CreatedAt:   time.Now(),
 	}
 	mu sync.RWMutex
+
+	//The following three lines have been added for OAuth
+	oauthConfig *oauth2.Config
+	oauthStateString = "random-state-string"
+	store = sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
 )
 
 func init() {
@@ -67,13 +79,38 @@ func init() {
 		log.Println("Warning: .env file not found")
 	}
 
+	key := os.Getenv("SESSION_KEY")
+	if key == "" {
+		log.Fatal("SESSION_KEY is empty or not set in .env")
+	}
+
+	//Initialize session store using the loaded key
+	store = sessions.NewCookieStore([]byte(key))
+	store.Options = &sessions.Options{
+		Path:     "/",
+		MaxAge:   86400 * 7,                // 7 days
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,     // or SameSiteStrictMode
+		Secure:   os.Getenv("ENV") == "production",
+	}
+
 	// Initialize translator
 	var err error
 	translator, err = translation.NewTranslator()
 	if err != nil {
 		log.Fatalf("Failed to initialize translator: %v", err)
 	}
+
+	// Initialize OAuth config
+	oauthConfig = &oauth2.Config{
+		RedirectURL:  os.Getenv("OAUTH_REDIRECT_URL"),
+		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
+		Endpoint:     google.Endpoint,
+	}
 }
+
 
 func main() {
 	router := gin.Default()
@@ -109,6 +146,7 @@ func main() {
 
 	// Load all HTML templates from the templates directory
 	router.LoadHTMLGlob("templates/*.html")
+	// router.LoadHTMLGlob("templates/**/*.html")
 	log.Printf("Loaded templates from %s", templatesDir)
 
 	// Routes
@@ -117,6 +155,7 @@ func main() {
 		c.HTML(http.StatusOK, "index.html", gin.H{
 			"title": "Translation Service",
 		})
+
 	})
 
 	router.GET("/speaker", func(c *gin.Context) {
@@ -175,12 +214,112 @@ func main() {
 		c.HTML(http.StatusOK, "streams.html", gin.H{
 			"title":   "Active Streams",
 			"streams": activeStreams,
-		})
+		})	
+		
 	})
 
 	router.GET("/ws", func(c *gin.Context) {
 		handleWebSocket(c)
 	})
+
+	//The folllowing router.GET was added for OAuth
+	router.GET("/login", func(c *gin.Context) {
+		url := oauthConfig.AuthCodeURL(oauthStateString)
+		c.Redirect(http.StatusTemporaryRedirect, url)
+	})
+	
+	router.GET("/callback", func(c *gin.Context) {
+		if c.Query("state") != oauthStateString {
+			c.String(http.StatusBadRequest, "State mismatch")
+			return
+		}
+	
+		token, err := oauthConfig.Exchange(context.Background(), c.Query("code"))
+		if err != nil {
+			log.Printf("Token exchange failed: %v", err)
+			c.String(http.StatusInternalServerError, "Token exchange failed")
+			return
+		}
+	
+		client := oauthConfig.Client(context.Background(), token)
+		emailResp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+		if err != nil {
+			log.Printf("Failed getting user info: %v", err)
+			c.String(http.StatusInternalServerError, "Failed getting user info")
+			return
+		}
+		defer emailResp.Body.Close()
+	
+		// Extract email
+		email := extractEmail(emailResp)
+		if email == "" {
+			log.Println("Email not found in user info response")
+			c.String(http.StatusInternalServerError, "Failed to extract email")
+			return
+		}
+	
+		log.Printf("User logged in with email: %s", email)
+	
+		// Save email to session
+		session, _ := store.Get(c.Request, "session-name")
+		session.Values["email"] = email
+	
+		// Set session cookie properties (optional but recommended)
+		store.Options = &sessions.Options{
+			Path:     "/",
+			MaxAge:   86400 * 7, // 7 days
+			HttpOnly: true,
+			Secure:   false,     // set to true in production with HTTPS
+			SameSite: http.SameSiteLaxMode,
+		}
+	
+		// Save the session
+		err = session.Save(c.Request, c.Writer)
+		if err != nil {
+			log.Printf("Failed to save session: %v", err)
+			c.String(http.StatusInternalServerError, "Failed to save session")
+			return
+		}
+	
+		// Redirect back to the original page, if present
+		from := c.Query("from")
+		if from == "" {
+			from = "/" // Default to home if nothing specified
+		}
+		log.Printf("Redirecting user to: %s", from)
+		c.Redirect(http.StatusSeeOther, from)
+	})
+	
+	
+	router.GET("/logout", func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		delete(session.Values, "email")
+		session.Save(c.Request, c.Writer)
+		c.Redirect(http.StatusSeeOther, "/")
+	})
+	
+	// router.GET("/account", func(c *gin.Context) {
+	// 	session, _ := store.Get(c.Request, "session-name")
+	// 	email, ok := session.Values["email"].(string)
+	// 	if !ok || email == "" {
+	// 		c.Redirect(http.StatusSeeOther, "/")
+	// 		return
+	// 	}
+	// 	c.File("templates/account.html")
+	// })
+	router.GET("/account", func(c *gin.Context) {
+		log.Printf("Serving account.html")
+		c.HTML(http.StatusOK, "account.html", gin.H{
+			"title": "Account",
+		})
+	})
+	
+
+	router.GET("/session", func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		email := session.Values["email"]
+		c.JSON(http.StatusOK, gin.H{"email": email})
+	})	
 
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
@@ -324,3 +463,18 @@ func translateText(text, sourceLang, targetLang string) (string, error) {
 	}
 	return translator.Translate(text, sourceLang, targetLang)
 }
+
+//The following function has been added for OAuth
+func extractEmail(resp *http.Response) string {
+	var result struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("Error decoding email: %v", err)
+		return ""
+	}
+	return result.Email
+}
+
+
+

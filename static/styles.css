@@ -42,7 +42,8 @@ body {
 
 .nav-links {
     display: flex;
-    gap: 2rem;
+    gap: 1.5rem;
+    align-items: center;
 }
 
 .nav-links a {
@@ -55,6 +56,15 @@ body {
 
 .nav-links a:hover {
     background-color: var(--accent-color);
+}
+
+.user-email {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .container {
@@ -269,4 +279,33 @@ body {
 input[type="password"] {
     font-family: monospace;
     letter-spacing: 2px;
-} 
+}
+
+.nav-auth {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-left: 2rem;
+}
+
+.auth-button {
+    color: var(--text-color);
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+.auth-button:hover {
+    background-color: var(--accent-color);
+}
+
+.user-email {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+    font-size: 0.9rem;
+}
+

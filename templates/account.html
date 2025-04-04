@@ -1,8 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Contact - BMM Translation</title>
+    <title>My Account - BMM Translation</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .center-content {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 70vh;
+            flex-direction: column;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -22,38 +32,25 @@
         </div>
     </nav>
 
-    <div class="container">
-        <div class="contact-section">
-            <h1 class="hero-title">Contact Us</h1>
-            <div class="contact-info">
-                <p>Email: <strong>damanning911@att.net</strong></p>
-                <p>Phone: <strong>(346) 225-4104</strong></p>
-                <p>Location: <strong>College Station, Texas</strong></p>
-            </div>
-            
-            <div class="about-section">
-                <h2 class="section-title">About Us</h2>
-                <p class="about-text">
-                    This service started as a Computer Science Senior Capstone project for CSCE 482 at Texas A&M University.
-                </p>
-            </div>
-        </div>
+    <div class="center-content" id="account-content">
+        <p>Loading account details...</p>
     </div>
+
     <script>
+        const emailSpan = document.getElementById("user-email");
         const loginBtn = document.getElementById("login-btn");
         const logoutBtn = document.getElementById("logout-btn");
-        const emailSpan = document.getElementById("user-email");
-    
-        // Redirect back to this page after login
-        if (loginBtn) {
-            loginBtn.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
-        }
-    
+        const accountContent = document.getElementById("account-content");
+
         fetch("/session")
             .then(res => res.json())
             .then(data => {
-                if (data.email) {
-                    emailSpan.textContent = data.email;
+                const email = data.email;
+                const loggedIn = !!email;
+
+                // Navbar display logic
+                if (loggedIn) {
+                    emailSpan.textContent = email;
                     loginBtn.style.display = "none";
                     logoutBtn.style.display = "inline";
                 } else {
@@ -61,7 +58,21 @@
                     loginBtn.style.display = "inline";
                     logoutBtn.style.display = "none";
                 }
+
+                // Account page debug display
+                accountContent.innerHTML = `
+                    <h2>Account Status</h2>
+                    <p><strong>Logged In:</strong> ${loggedIn}</p>
+                    <p><strong>Email:</strong> ${email ? email : "None"}</p>
+                `;
+            })
+            .catch(err => {
+                console.error("Error fetching session info:", err);
+                accountContent.innerHTML = `
+                    <h2>Error loading account data</h2>
+                    <p>Unable to retrieve session information.</p>
+                `;
             });
-    </script>    
+    </script>
 </body>
-</html> 
+</html>

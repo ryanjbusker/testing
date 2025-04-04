@@ -16,7 +16,11 @@
                 <a href="/audience">Audience</a>
                 <a href="/streams">Active Streams</a>
                 <a href="/contact">Contact</a>
+                <a href="/account">Account</a>
             </div>
+            <span id="user-email" class="user-email"></span>
+            <a id="login-btn" href="/login" class="auth-button">Sign In</a>
+            <a id="logout-btn" href="/logout" class="auth-button" style="display: none;">Logout</a>
         </div>
     </nav>
 
@@ -250,6 +254,30 @@
                 recognition.stop();
             }
         };
+
+        
+        const loginBtn = document.getElementById("login-btn");
+        const logoutBtn = document.getElementById("logout-btn");
+        const emailSpan = document.getElementById("user-email");
+
+        // Redirect back to this page after login
+        if (loginBtn) {
+            loginBtn.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+        }
+
+        fetch("/session")
+            .then(res => res.json())
+            .then(data => {
+                if (data.email) {
+                    emailSpan.textContent = data.email;
+                    loginBtn.style.display = "none";
+                    logoutBtn.style.display = "inline";
+                } else {
+                    emailSpan.textContent = "";
+                    loginBtn.style.display = "inline";
+                    logoutBtn.style.display = "none";
+                }
+            });
     </script>
 </body>
 </html> 
