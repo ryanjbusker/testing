@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,7 +19,7 @@ import (
 	"github.com/joho/godotenv"
 
 	//The following four lines are added for OAuth
-	// "github.com/gorilla/mux" 
+	// "github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -68,9 +67,9 @@ var (
 	mu sync.RWMutex
 
 	//The following three lines have been added for OAuth
-	oauthConfig *oauth2.Config
+	oauthConfig      *oauth2.Config
 	oauthStateString = "random-state-string"
-	store = sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
+	store            = sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
 )
 
 func init() {
@@ -88,9 +87,9 @@ func init() {
 	store = sessions.NewCookieStore([]byte(key))
 	store.Options = &sessions.Options{
 		Path:     "/",
-		MaxAge:   86400 * 7,                // 7 days
+		MaxAge:   86400 * 7, // 7 days
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,     // or SameSiteStrictMode
+		SameSite: http.SameSiteLaxMode, // or SameSiteStrictMode
 		Secure:   os.Getenv("ENV") == "production",
 	}
 
@@ -110,7 +109,6 @@ func init() {
 		Endpoint:     google.Endpoint,
 	}
 }
-
 
 func main() {
 	router := gin.Default()
@@ -214,8 +212,8 @@ func main() {
 		c.HTML(http.StatusOK, "streams.html", gin.H{
 			"title":   "Active Streams",
 			"streams": activeStreams,
-		})	
-		
+		})
+
 	})
 
 	router.GET("/ws", func(c *gin.Context) {
@@ -227,20 +225,20 @@ func main() {
 		url := oauthConfig.AuthCodeURL(oauthStateString)
 		c.Redirect(http.StatusTemporaryRedirect, url)
 	})
-	
+
 	router.GET("/callback", func(c *gin.Context) {
 		if c.Query("state") != oauthStateString {
 			c.String(http.StatusBadRequest, "State mismatch")
 			return
 		}
-	
+
 		token, err := oauthConfig.Exchange(context.Background(), c.Query("code"))
 		if err != nil {
 			log.Printf("Token exchange failed: %v", err)
 			c.String(http.StatusInternalServerError, "Token exchange failed")
 			return
 		}
-	
+
 		client := oauthConfig.Client(context.Background(), token)
 		emailResp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
 		if err != nil {
@@ -249,7 +247,7 @@ func main() {
 			return
 		}
 		defer emailResp.Body.Close()
-	
+
 		// Extract email
 		email := extractEmail(emailResp)
 		if email == "" {
@@ -257,22 +255,22 @@ func main() {
 			c.String(http.StatusInternalServerError, "Failed to extract email")
 			return
 		}
-	
+
 		log.Printf("User logged in with email: %s", email)
-	
+
 		// Save email to session
 		session, _ := store.Get(c.Request, "session-name")
 		session.Values["email"] = email
-	
+
 		// Set session cookie properties (optional but recommended)
 		store.Options = &sessions.Options{
 			Path:     "/",
 			MaxAge:   86400 * 7, // 7 days
 			HttpOnly: true,
-			Secure:   false,     // set to true in production with HTTPS
+			Secure:   false, // set to true in production with HTTPS
 			SameSite: http.SameSiteLaxMode,
 		}
-	
+
 		// Save the session
 		err = session.Save(c.Request, c.Writer)
 		if err != nil {
@@ -280,7 +278,7 @@ func main() {
 			c.String(http.StatusInternalServerError, "Failed to save session")
 			return
 		}
-	
+
 		// Redirect back to the original page, if present
 		from := c.Query("from")
 		if from == "" {
@@ -289,23 +287,22 @@ func main() {
 		log.Printf("Redirecting user to: %s", from)
 		c.Redirect(http.StatusSeeOther, from)
 	})
-	
-	
+
 	router.GET("/logout", func(c *gin.Context) {
 		session, _ := store.Get(c.Request, "session-name")
 		delete(session.Values, "email")
 		session.Save(c.Request, c.Writer)
 		c.Redirect(http.StatusSeeOther, "/")
 	})
-	
+
 	// router.GET("/account", func(c *gin.Context) {
-	// 	session, _ := store.Get(c.Request, "session-name")
-	// 	email, ok := session.Values["email"].(string)
-	// 	if !ok || email == "" {
-	// 		c.Redirect(http.StatusSeeOther, "/")
-	// 		return
-	// 	}
-	// 	c.File("templates/account.html")
+	//  session, _ := store.Get(c.Request, "session-name")
+	//  email, ok := session.Values["email"].(string)
+	//  if !ok || email == "" {
+	//      c.Redirect(http.StatusSeeOther, "/")
+	//      return
+	//  }
+	//  c.File("templates/account.html")
 	// })
 	router.GET("/account", func(c *gin.Context) {
 		log.Printf("Serving account.html")
@@ -313,13 +310,12 @@ func main() {
 			"title": "Account",
 		})
 	})
-	
 
 	router.GET("/session", func(c *gin.Context) {
 		session, _ := store.Get(c.Request, "session-name")
 		email := session.Values["email"]
 		c.JSON(http.StatusOK, gin.H{"email": email})
-	})	
+	})
 
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
@@ -334,9 +330,7 @@ func main() {
 	}
 }
 
-func generatePassword() string {
-	return fmt.Sprintf("%05d", rand.Intn(100000))
-}
+
 
 func handleWebSocket(c *gin.Context) {
 	role := c.Query("role")
@@ -402,9 +396,13 @@ func handleWebSocket(c *gin.Context) {
 			Language:   lang,
 			LastActive: time.Now(),
 		}
+		mu.Lock() // Use write lock to modify the stream
 		stream.Audience[audienceID] = audience
 		log.Printf("Added audience member %s", audienceID)
+		mu.Unlock()
+
 		defer func() {
+			mu.Lock() // Use write lock to modify the stream
 			conn.Close()
 			delete(stream.Audience, audienceID)
 			log.Printf("Audience member %s left", audienceID)
@@ -412,15 +410,18 @@ func handleWebSocket(c *gin.Context) {
 				stream.IsActive = false
 				log.Printf("Stream is now inactive")
 			}
-		}()
+			mu.Unlock()
+		}() // Ensure the function call syntax () is present
 	}
 
 	// Handle incoming messages
 	for {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("Error reading message: %v", err)
-			break
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("Error reading message: %v", err)
+			}
+			break // Exit loop on error or close
 		}
 
 		if messageType == websocket.TextMessage {
@@ -430,29 +431,81 @@ func handleWebSocket(c *gin.Context) {
 				continue
 			}
 
-			if data["type"] == "speech" {
-				text := data["text"].(string)
+			if msgType, ok := data["type"].(string); ok && msgType == "speech" {
+				text, ok := data["text"].(string)
+				if !ok || text == "" {
+					log.Printf("Received speech message with invalid or empty text")
+					continue
+				}
+
 				speakerID := conn.RemoteAddr().String()
+				mu.RLock() // Lock for reading speaker and audience data
 				speaker := stream.Speakers[speakerID]
-				if speaker != nil {
-					// Translate for each audience member
-					for _, audience := range stream.Audience {
-						translatedText, err := translateText(text, speaker.Language, audience.Language)
-						if err != nil {
-							log.Printf("Translation error: %v", err)
-							continue
+
+				if speaker == nil {
+					mu.RUnlock()
+					log.Printf("Received speech message from unknown speaker: %s", speakerID)
+					continue // Ignore message if speaker is not found (already disconnected?)
+				}
+
+				// --- Translation Optimization ---
+				// 1. Group audience by target language
+				audienceByLang := make(map[string][]*websocket.Conn)
+				for _, audience := range stream.Audience {
+					audienceByLang[audience.Language] = append(audienceByLang[audience.Language], audience.Conn)
+				}
+				mu.RUnlock() // Unlock after reading audience data
+
+				// 2. Translate once per target language
+				translations := make(map[string]string)
+				translationErrors := make(map[string]error)
+				for targetLang := range audienceByLang {
+					translatedText, err := translateText(text, speaker.Language, targetLang)
+					if err != nil {
+						log.Printf("Translation error from %s to %s: %v", speaker.Language, targetLang, err)
+						translationErrors[targetLang] = err // Store error
+						continue                            // Skip this language if translation fails
+					}
+					translations[targetLang] = translatedText
+					log.Printf("Translated '%s' (%s) to '%s' (%s)", text, speaker.Language, translatedText, targetLang) // Log successful translation
+				}
+
+				// 3. Send translated text to relevant audience groups
+				for targetLang, conns := range audienceByLang {
+					// Check if translation was successful for this language
+					translatedText, ok := translations[targetLang]
+					if !ok {
+						// Optionally send an error message to these clients
+						// log.Printf("Skipping sending to %s due to translation error: %v", targetLang, translationErrors[targetLang])
+						continue
+					}
+
+					response := map[string]interface{}{
+						"type":     "translation",
+						"text":     translatedText,
+						"speaker":  speakerID,
+						"original": text, // Include original text for context if needed
+					}
+					responseJSON, err := json.Marshal(response)
+					if err != nil {
+						log.Printf("Error marshalling translation response: %v", err)
+						continue // Skip this group if marshalling fails
+					}
+
+					// Send to all connections in this language group
+					for _, audienceConn := range conns {
+						if err := audienceConn.WriteMessage(websocket.TextMessage, responseJSON); err != nil {
+							log.Printf("Error sending translation to audience %s: %v", audienceConn.RemoteAddr().String(), err)
+							// Handle potential write errors (e.g., remove disconnected client)
 						}
-						response := map[string]interface{}{
-							"type":     "translation",
-							"text":     translatedText,
-							"speaker":  speakerID,
-							"original": text,
-						}
-						responseJSON, _ := json.Marshal(response)
-						audience.Conn.WriteMessage(websocket.TextMessage, responseJSON)
 					}
 				}
+			} else {
+				// Handle other message types if necessary
+				log.Printf("Received non-speech message or unknown type: %v", data)
 			}
+		} else {
+			log.Printf("Received non-text message type: %d", messageType)
 		}
 	}
 }
@@ -464,17 +517,13 @@ func translateText(text, sourceLang, targetLang string) (string, error) {
 	return translator.Translate(text, sourceLang, targetLang)
 }
 
-//The following function has been added for OAuth
 func extractEmail(resp *http.Response) string {
-	var result struct {
+	var userInfo struct {
 		Email string `json:"email"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("Error decoding email: %v", err)
+	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
+		log.Printf("Error decoding user info: %v", err)
 		return ""
 	}
-	return result.Email
+	return userInfo.Email
 }
-
-
-
