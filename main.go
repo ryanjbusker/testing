@@ -4,6 +4,7 @@ import (
 	"context" //Added for OAuth
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -23,6 +24,12 @@ import (
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/polly"
+	"github.com/aws/aws-sdk-go-v2/service/polly/types"
 )
 
 var translator *translation.Translator
@@ -33,6 +40,8 @@ var upgrader = websocket.Upgrader{
 		return true // Allow all origins in development
 	},
 }
+
+var pollyClient *polly.Client
 
 type Stream struct {
 	Speakers    map[string]*Speaker
@@ -93,11 +102,36 @@ func init() {
 		Secure:   os.Getenv("ENV") == "production",
 	}
 
+	// Log AWS configuration values
+	region := os.Getenv("TRANSLATE_REGION")
+	accessKey := os.Getenv("TRANSLATE_ACCESS_KEY_ID")
+	secretKey := os.Getenv("TRANSLATE_SECRET_ACCESS_KEY")
+
+	log.Printf("AWS Region: %s", region)
+	log.Printf("AWS Access Key ID length: %d", len(accessKey))
+	log.Printf("AWS Secret Key length: %d", len(secretKey))
+
+	// Initialize AWS Polly client
+	awsCfg, awsErr := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			accessKey,
+			secretKey,
+			"",
+		)),
+	)
+	if awsErr != nil {
+		log.Fatalf("unable to load SDK config, %v", awsErr)
+	}
+
+	pollyClient = polly.NewFromConfig(awsCfg)
+	log.Println("AWS Polly client initialized successfully")
+
 	// Initialize translator
-	var err error
-	translator, err = translation.NewTranslator()
-	if err != nil {
-		log.Fatalf("Failed to initialize translator: %v", err)
+	var translatorErr error
+	translator, translatorErr = translation.NewTranslator()
+	if translatorErr != nil {
+		log.Fatalf("Failed to initialize translator: %v", translatorErr)
 	}
 
 	// Initialize OAuth config
@@ -317,6 +351,9 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"email": email})
 	})
 
+	// Add Polly TTS endpoint
+	router.POST("/polly-tts", handlePollyTTS)
+
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -325,12 +362,10 @@ func main() {
 
 	// Start server
 	log.Printf("Server starting on port %s", port)
-	if err := router.Run(":" + port); err != nil {
+	if err := router.Run("0.0.0.0:" + port); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
 }
-
-
 
 func handleWebSocket(c *gin.Context) {
 	role := c.Query("role")
@@ -526,4 +561,90 @@ func extractEmail(resp *http.Response) string {
 		return ""
 	}
 	return userInfo.Email
+}
+
+func handlePollyTTS(c *gin.Context) {
+	log.Println("=== POLLY TTS ENDPOINT CALLED ===")
+
+	var req struct {
+		Text     string `json:"text"`
+		Language string `json:"language"`
+		VoiceId  string `json:"voiceId"`
+	}
+	if err := c.BindJSON(&req); err != nil {
+		log.Printf("Error binding JSON request: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Log the incoming request
+	log.Printf("Polly TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
+
+	voiceId := types.VoiceId("Joanna")
+	if req.VoiceId != "" {
+		voiceId = types.VoiceId(req.VoiceId)
+	} else {
+		// Otherwise, select voice based on language
+		switch req.Language {
+		case "es-ES":
+			voiceId = types.VoiceId("Lucia")
+		case "fr-FR":
+			voiceId = types.VoiceId("Lea")
+		case "de-DE":
+			voiceId = types.VoiceId("Vicki")
+		case "it-IT":
+			voiceId = types.VoiceId("Carla")
+		case "pt-BR":
+			voiceId = types.VoiceId("Camila")
+		case "nl-NL":
+			voiceId = types.VoiceId("Laura")
+		case "pl-PL":
+			voiceId = types.VoiceId("Ola")
+		case "ru-RU":
+			voiceId = types.VoiceId("Tatyana")
+		case "ja-JP":
+			voiceId = types.VoiceId("Takumi")
+		case "ko-KR":
+			voiceId = types.VoiceId("Seoyeon")
+		case "zh-CN":
+			voiceId = types.VoiceId("Zhiyu")
+		}
+	}
+
+	log.Printf("Selected voice ID: %s", voiceId)
+
+	input := &polly.SynthesizeSpeechInput{
+		Text:         aws.String(req.Text),
+		OutputFormat: types.OutputFormatMp3,
+		VoiceId:      voiceId,
+		Engine:       types.EngineNeural,
+	}
+
+	log.Printf("Sending request to Polly with input: %+v", input)
+
+	output, err := pollyClient.SynthesizeSpeech(context.Background(), input)
+	if err != nil {
+		log.Printf("Error synthesizing speech: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to synthesize speech"})
+		return
+	}
+
+	log.Printf("Successfully received response from Polly")
+
+	// Set headers for audio streaming
+	c.Header("Content-Type", "audio/mpeg")
+	c.Header("Content-Disposition", "attachment; filename=speech.mp3")
+	c.Header("Transfer-Encoding", "chunked")
+
+	// Stream the audio data to the client
+	defer output.AudioStream.Close()
+	_, err = io.Copy(c.Writer, output.AudioStream)
+	if err != nil {
+		log.Printf("Error streaming audio: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stream audio"})
+		return
+	}
+
+	log.Printf("Successfully streamed audio to client")
+	log.Println("=== POLLY TTS ENDPOINT COMPLETED ===")
 }

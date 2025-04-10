@@ -84,11 +84,6 @@
 
     <script>
         let ws = null;
-        let speechSynthesis = window.speechSynthesis;
-        let currentUtterance = null;
-        let lastSpokenText = '';
-        let speechQueue = [];
-        let isSpeaking = false;
         const connectButton = document.getElementById('connectButton');
         const disconnectButton = document.getElementById('disconnectButton');
         const statusDiv = document.getElementById('status');
@@ -96,6 +91,9 @@
         const translatedTextDiv = document.getElementById('translatedText');
         const targetLanguage = document.getElementById('targetLanguage');
         let activeSpeakers = new Set();
+        let audioQueue = [];
+        let isPlaying = false;
+        let currentAudio = null;
 
         function updateActiveSpeakers() {
             if (activeSpeakers.size === 0) {
@@ -104,94 +102,97 @@
                 activeSpeakersDiv.textContent = `Active Speakers: ${Array.from(activeSpeakers).join(', ')}`;
             }
         }
-
-        function speak(text) {
-            // Only speak if the text is different from the last spoken text
-            if (text === lastSpokenText) {
-                return;
-            }
-
-            // Add new text to the queue
-            speechQueue.push(text);
-            
-            // If not currently speaking, start speaking
-            if (!isSpeaking) {
-                speakNextInQueue();
-            }
-        }
-
-        function speakNextInQueue() {
-            if (speechQueue.length === 0) {
-                isSpeaking = false;
-                return;
-            }
-
-            isSpeaking = true;
-            const text = speechQueue.shift();
-            
-            // Cancel any ongoing speech
-            if (currentUtterance) {
-                speechSynthesis.cancel();
-            }
-
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = targetLanguage.value;
-            
-            // Adjust speech parameters for slightly slower but still natural speech
-            utterance.rate = 1.1;
-            utterance.pitch = 1.0;
-            utterance.volume = 1.0;
-
-            // Get available voices and select one for the target language
-            const voices = speechSynthesis.getVoices();
-            let selectedVoice = null;
-            
-            // Try to find a voice that matches the exact language code first
-            selectedVoice = voices.find(voice => voice.lang === targetLanguage.value);
-            
-            // If not found, try to match the language code without the region
-            if (!selectedVoice) {
-                const baseLang = targetLanguage.value.split('-')[0];
-                selectedVoice = voices.find(voice => voice.lang.startsWith(baseLang));
-            }
-            
-            // If still not found, use the first available voice
-            if (!selectedVoice && voices.length > 0) {
-                selectedVoice = voices[0];
-            }
-
-            if (selectedVoice) {
-                utterance.voice = selectedVoice;
-            }
-
-            currentUtterance = utterance;
-            lastSpokenText = text;
-
-            // Keep the quick transitions between phrases
-            utterance.onend = () => {
-                setTimeout(() => {
-                    speakNextInQueue();
-                }, 20);
+        function getVoiceId(lang) {
+            const voices = {
+                'es': 'Lupe',
+                'fr': 'Celine',
+                'de': 'Marlene',
+                'it': 'Carla',
+                'ja': 'Mizuki',
+                'ko': 'Seoyeon',
+                'ru': 'Tatyana',
+                'hi': 'Aditi',
+                'en': 'Joanna',
+                // Add more as needed
             };
-
-            speechSynthesis.speak(utterance);
+            return voices[lang] || 'Joanna'; // Fallback to English
         }
 
-        // Initialize voices when they become available
-        function initializeVoices() {
-            const voices = speechSynthesis.getVoices();
-            if (voices.length > 0) {
-                console.log('Voices loaded:', voices.map(v => `${v.name} (${v.lang})`));
+        // Function to process the audio queue
+        async function processAudioQueue() {
+            if (isPlaying || audioQueue.length === 0) return;
+            
+            isPlaying = true;
+            const { audio, resolve } = audioQueue.shift();
+            currentAudio = audio;
+            
+            try {
+                await audio.play();
+                audio.onended = () => {
+                    isPlaying = false;
+                    currentAudio = null;
+                    resolve();
+                    processAudioQueue(); // Process next item in queue
+                };
+            } catch (error) {
+                console.error('Error playing audio:', error);
+                isPlaying = false;
+                currentAudio = null;
+                resolve();
+                processAudioQueue(); // Continue with next item even if there's an error
             }
         }
 
-        // Handle voice loading
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = initializeVoices;
+        // Function to stop current audio and clear queue
+        function stopAudio() {
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }
+            isPlaying = false;
+            audioQueue = [];
         }
 
-        // Initial voice check
-        initializeVoices();
+        async function speakText(text, lang) {
+            try {
+                console.log('Calling Polly TTS with text:', text, 'language:', lang);
+                const response = await fetch('/polly-tts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        language: lang,
+                        voiceId: getVoiceId(lang)
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to synthesize speech');
+                }
+
+                // Create a blob from the audio data
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+
+                // Create audio element
+                const audio = new Audio(audioUrl);
+                audio.onended = () => {
+                    URL.revokeObjectURL(audioUrl); // Clean up the URL object
+                };
+
+                // Add to queue and process
+                audioQueue.push({
+                    audio,
+                    resolve: () => {} // Empty resolve function
+                });
+                processAudioQueue();
+            } catch (error) {
+                console.error('Error playing speech:', error);
+            }
+        }
 
         function connectWebSocket() {
             if (ws) {
@@ -219,6 +220,7 @@
                 targetLanguage.disabled = false;
                 activeSpeakers.clear();
                 updateActiveSpeakers();
+                stopAudio(); // Stop any playing audio when disconnected
             };
 
             ws.onerror = (error) => {
@@ -237,7 +239,7 @@
                         activeSpeakers.add(data.speaker);
                         updateActiveSpeakers();
                     }
-                    speak(data.text);
+                    await speakText(data.text, targetLanguage.value);
                 } else if (data.type === 'speaker_left') {
                     activeSpeakers.delete(data.speaker);
                     updateActiveSpeakers();
@@ -250,12 +252,6 @@
                 ws.close();
                 ws = null;
             }
-            if (currentUtterance) {
-                speechSynthesis.cancel();
-            }
-            speechQueue = [];
-            lastSpokenText = '';
-            isSpeaking = false;
             
             // Reset UI elements
             statusDiv.textContent = 'Not connected';
@@ -265,6 +261,7 @@
             translatedTextDiv.textContent = '';
             activeSpeakers.clear();
             updateActiveSpeakers();
+            stopAudio(); // Stop any playing audio when disconnecting
         }
 
         connectButton.addEventListener('click', connectWebSocket);
@@ -275,22 +272,12 @@
                     language: targetLanguage.value
                 }));
             }
-            // Clear speech queue and reset state when changing language
-            speechQueue = [];
-            if (currentUtterance) {
-                speechSynthesis.cancel();
-            }
-            lastSpokenText = '';
-            isSpeaking = false;
         });
 
         // Clean up on page unload
         window.onbeforeunload = function() {
             if (ws) {
                 ws.close();
-            }
-            if (currentUtterance) {
-                speechSynthesis.cancel();
             }
         };
 
@@ -303,19 +290,27 @@
             loginBtn.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
         }
     
-        fetch("/session")
-            .then(res => res.json())
-            .then(data => {
-                if (data.email) {
-                    emailSpan.textContent = data.email;
-                    loginBtn.style.display = "none";
-                    logoutBtn.style.display = "inline";
-                } else {
-                    emailSpan.textContent = "";
-                    loginBtn.style.display = "inline";
-                    logoutBtn.style.display = "none";
-                }
-            });
+        window.addEventListener("DOMContentLoaded", () => {
+            const emailSpan = document.getElementById("email");
+            const loginBtn = document.getElementById("login-btn");
+            const logoutBtn = document.getElementById("logout-btn");
+
+            fetch("/session")
+                .then(res => res.json())
+                .then(data => {
+                    if (emailSpan && loginBtn && logoutBtn) {
+                        if (data.email) {
+                            emailSpan.textContent = data.email;
+                            loginBtn.style.display = "none";
+                            logoutBtn.style.display = "inline";
+                        } else {
+                            emailSpan.textContent = "";
+                            loginBtn.style.display = "inline";
+                            logoutBtn.style.display = "none";
+                        }
+                    }
+                });
+        });
     </script>    
 </body>
 </html> 

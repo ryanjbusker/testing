@@ -17,11 +17,15 @@ type Translator struct {
 
 func NewTranslator() (*Translator, error) {
 	log.Println("Initializing AWS Translate client...")
-	
+
 	// Get AWS credentials from environment variables
 	accessKeyID := os.Getenv("TRANSLATE_ACCESS_KEY_ID")
 	secretAccessKey := os.Getenv("TRANSLATE_SECRET_ACCESS_KEY")
 	region := os.Getenv("TRANSLATE_REGION")
+
+	log.Printf("Using AWS Region: %s", region)
+	log.Printf("Access Key ID length: %d", len(accessKeyID))
+	log.Printf("Secret Access Key length: %d", len(secretAccessKey))
 
 	if accessKeyID == "" || secretAccessKey == "" || region == "" {
 		return nil, fmt.Errorf("AWS credentials not found in environment variables")
@@ -67,6 +71,8 @@ func (t *Translator) Translate(text, sourceLang, targetLang string) (string, err
 		TargetLanguageCode: &targetLang,
 	}
 
+	log.Printf("Sending translation request to AWS: %+v", input)
+
 	result, err := t.client.TranslateText(ctx, input)
 	if err != nil {
 		log.Printf("Translation error: %v", err)
@@ -94,4 +100,4 @@ func convertLangCode(langCode string) string {
 		return langCode[:2]
 	}
 	return langCode
-} 
+}

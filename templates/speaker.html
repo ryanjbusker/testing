@@ -86,13 +86,18 @@
         let lastTranslationTime = 0;
         let lastSentText = '';
         let isRecognitionActive = false;
-        const TRANSLATION_DEBOUNCE = 1000; // 1 second debounce
+        const TRANSLATION_DEBOUNCE = 500; // Reduced to 500ms for more responsive output
         const RECOGNITION_RESTART_DELAY = 100; // 100ms delay before restarting recognition
+        const SENTENCE_ENDINGS = /[.!?]\s+/; // Regular expression for sentence endings
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const statusDiv = document.getElementById('status');
         const recognizedTextDiv = document.getElementById('recognizedText');
         const sourceLanguage = document.getElementById('sourceLanguage');
+
+        function isCompleteSentence(text) {
+            return SENTENCE_ENDINGS.test(text) || text.trim().endsWith('?') || text.trim().endsWith('!') || text.trim().endsWith('.');
+        }
 
         function connectWebSocket() {
             if (ws) {
@@ -178,9 +183,9 @@
                         // Update speech buffer with only the new text
                         speechBuffer = newText;
                         
-                        // Check if enough time has passed since last translation
+                        // Check if we have a complete sentence or enough time has passed
                         const now = Date.now();
-                        if (now - lastTranslationTime >= TRANSLATION_DEBOUNCE) {
+                        if (isCompleteSentence(speechBuffer) || (now - lastTranslationTime >= TRANSLATION_DEBOUNCE && speechBuffer.length > 10)) {
                             if (ws && ws.readyState === WebSocket.OPEN) {
                                 ws.send(JSON.stringify({
                                     type: "speech",
@@ -189,6 +194,7 @@
                                 }));
                                 lastTranslationTime = now;
                                 lastSentText = transcript;
+                                speechBuffer = ''; // Clear the buffer after sending
                             }
                         }
                     }
@@ -219,6 +225,7 @@
             stopButton.disabled = false;
             statusDiv.textContent = 'Speaking...';
             lastSentText = ''; // Reset last sent text when starting
+            speechBuffer = ''; // Clear the buffer when starting
         }
 
         function stopRecognition() {
