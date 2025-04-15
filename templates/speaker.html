@@ -30,13 +30,6 @@
         <div class="content-box">
             <div class="form-group">
                 <label for="sourceLanguage">Your Language</label>
-                <!-- <select id="sourceLanguage" class="form-control">
-                    <option value="en-US">English (US)</option>
-                    <option value="es-ES">Spanish</option>
-                    <option value="fr-FR">French</option>
-                    <option value="de-DE">German</option>
-                    <option value="it-IT">Italian</option>
-                </select> -->
                 <select id="sourceLanguage" class="form-control">
                     <option value="en">English</option>
                     <option value="ar">Arabic</option>
@@ -106,7 +99,9 @@
 
             const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
             const protocol = isLocalhost ? 'ws:' : 'wss:';
-            const wsUrl = `${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`;
+            // const wsUrl = `${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}`;
+            const wsUrl = `${protocol}//${window.location.host}/ws-audio?lang=${sourceLanguage.value}`;
+
             console.log('Connecting to WebSocket:', wsUrl);
             
             try {
@@ -163,85 +158,146 @@
             }
         }
 
-        function startRecognition() {
-            if (!recognition) {
-                recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                recognition.lang = sourceLanguage.value;
+        // function startRecognition() {
+        //     if (!recognition) {
+        //         recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        //         recognition.continuous = true;
+        //         recognition.interimResults = true;
+        //         recognition.lang = sourceLanguage.value;
 
-                recognition.onresult = (event) => {
-                    const transcript = Array.from(event.results)
-                        .map(result => result[0].transcript)
-                        .join('');
+        //         recognition.onresult = (event) => {
+        //             const transcript = Array.from(event.results)
+        //                 .map(result => result[0].transcript)
+        //                 .join('');
 
-                    recognizedTextDiv.textContent = transcript;
+        //             recognizedTextDiv.textContent = transcript;
                     
-                    // Only send new text that hasn't been sent before
-                    const newText = transcript.slice(lastSentText.length);
-                    if (newText.trim()) {
-                        // Update speech buffer with only the new text
-                        speechBuffer = newText;
+        //             // Only send new text that hasn't been sent before
+        //             const newText = transcript.slice(lastSentText.length);
+        //             if (newText.trim()) {
+        //                 // Update speech buffer with only the new text
+        //                 speechBuffer = newText;
                         
-                        // Check if we have a complete sentence or enough time has passed
-                        const now = Date.now();
-                        if (isCompleteSentence(speechBuffer) || (now - lastTranslationTime >= TRANSLATION_DEBOUNCE && speechBuffer.length > 10)) {
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({
-                                    type: "speech",
-                                    text: speechBuffer,
-                                    language: sourceLanguage.value
-                                }));
-                                lastTranslationTime = now;
-                                lastSentText = transcript;
-                                speechBuffer = ''; // Clear the buffer after sending
-                            }
-                        }
-                    }
-                };
+        //                 // Check if we have a complete sentence or enough time has passed
+        //                 const now = Date.now();
+        //                 if (isCompleteSentence(speechBuffer) || (now - lastTranslationTime >= TRANSLATION_DEBOUNCE && speechBuffer.length > 10)) {
+        //                     if (ws && ws.readyState === WebSocket.OPEN) {
+        //                         ws.send(JSON.stringify({
+        //                             type: "speech",
+        //                             text: speechBuffer,
+        //                             language: sourceLanguage.value
+        //                         }));
+        //                         lastTranslationTime = now;
+        //                         lastSentText = transcript;
+        //                         speechBuffer = ''; // Clear the buffer after sending
+        //                     }
+        //                 }
+        //             }
+        //         };
 
-                recognition.onerror = (event) => {
-                    statusDiv.textContent = 'Error: ' + event.error;
-                    if (isRecognitionActive) {
-                        setTimeout(() => {
-                            recognition.start();
-                        }, RECOGNITION_RESTART_DELAY);
-                    }
-                };
+        //         recognition.onerror = (event) => {
+        //             statusDiv.textContent = 'Error: ' + event.error;
+        //             if (isRecognitionActive) {
+        //                 setTimeout(() => {
+        //                     recognition.start();
+        //                 }, RECOGNITION_RESTART_DELAY);
+        //             }
+        //         };
 
-                recognition.onend = () => {
-                    // Restart recognition if it ends unexpectedly
-                    if (isRecognitionActive) {
-                        setTimeout(() => {
-                            recognition.start();
-                        }, RECOGNITION_RESTART_DELAY);
-                    }
-                };
-            }
+        //         recognition.onend = () => {
+        //             // Restart recognition if it ends unexpectedly
+        //             if (isRecognitionActive) {
+        //                 setTimeout(() => {
+        //                     recognition.start();
+        //                 }, RECOGNITION_RESTART_DELAY);
+        //             }
+        //         };
+        //     }
 
-            isRecognitionActive = true;
-            recognition.start();
+        //     isRecognitionActive = true;
+        //     recognition.start();
+        //     startButton.disabled = true;
+        //     stopButton.disabled = false;
+        //     statusDiv.textContent = 'Speaking...';
+        //     lastSentText = ''; // Reset last sent text when starting
+        //     speechBuffer = ''; // Clear the buffer when starting
+        // }
+
+        // function stopRecognition() {
+        //     if (recognition) {
+        //         isRecognitionActive = false;
+        //         recognition.stop();
+        //         startButton.disabled = false;
+        //         stopButton.disabled = true;
+        //         statusDiv.textContent = 'Stopped';
+        //         speechBuffer = '';
+        //         lastSentText = ''; // Reset last sent text when stopping
+        //     }
+        // }
+
+
+        let audioContext, micStream, processor;
+
+        async function startStreaming() {
             startButton.disabled = true;
             stopButton.disabled = false;
-            statusDiv.textContent = 'Speaking...';
-            lastSentText = ''; // Reset last sent text when starting
-            speechBuffer = ''; // Clear the buffer when starting
+
+            const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+            const wsUrl = `${protocol}//${window.location.host}/ws-audio?lang=${sourceLanguage.value}`;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                statusDiv.textContent = "Connected to AWS Transcribe";
+            };
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === "translation") {
+                    recognizedTextDiv.textContent = `"${data.original}" → ${data.translation}`;
+                }
+            };
+            ws.onclose = () => {
+                statusDiv.textContent = "Disconnected";
+            };
+
+            audioContext = new AudioContext({ sampleRate: 16000 });
+            micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const source = audioContext.createMediaStreamSource(micStream);
+            processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+            source.connect(processor);
+            processor.connect(audioContext.destination);
+
+            processor.onaudioprocess = (e) => {
+                if (ws.readyState !== WebSocket.OPEN) return;
+                const input = e.inputBuffer.getChannelData(0);
+                const pcm = new Int16Array(input.length);
+                for (let i = 0; i < input.length; i++) {
+                    let s = Math.max(-1, Math.min(1, input[i]));
+                    pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                ws.send(pcm.buffer);
+            };
+
+            statusDiv.textContent = "Streaming audio...";
         }
 
-        function stopRecognition() {
-            if (recognition) {
-                isRecognitionActive = false;
-                recognition.stop();
-                startButton.disabled = false;
-                stopButton.disabled = true;
-                statusDiv.textContent = 'Stopped';
-                speechBuffer = '';
-                lastSentText = ''; // Reset last sent text when stopping
-            }
+        function stopStreaming() {
+            stopButton.disabled = true;
+            startButton.disabled = false;
+
+            if (processor) processor.disconnect();
+            if (audioContext) audioContext.close();
+            if (micStream) micStream.getTracks().forEach(t => t.stop());
+            if (ws) ws.close();
+
+            statusDiv.textContent = "Stopped";
         }
 
-        startButton.addEventListener('click', startRecognition);
-        stopButton.addEventListener('click', stopRecognition);
+        // startButton.addEventListener('click', startRecognition);
+        // stopButton.addEventListener('click', stopRecognition);
+        startButton.addEventListener("click", startStreaming);
+        stopButton.addEventListener("click", stopStreaming);
+
         sourceLanguage.addEventListener('change', () => {
             if (recognition) {
                 recognition.lang = sourceLanguage.value;
@@ -288,3 +344,5 @@
     </script>
 </body>
 </html> 
+
+

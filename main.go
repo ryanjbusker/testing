@@ -30,9 +30,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/polly"
 	"github.com/aws/aws-sdk-go-v2/service/polly/types"
+
+	//AWS Transcribe
+	"github.com/aws/aws-sdk-go-v2/service/transcribestreaming"
+    transcribetypes "github.com/aws/aws-sdk-go-v2/service/transcribestreaming/types"
+	// "github.com/aws/aws-sdk-go-v2/service/transcribestreaming"
+    // tstream "github.com/aws/aws-sdk-go-v2/service/transcribestreaming/types"
+
+	transcribeevent "github.com/aws/aws-sdk-go-v2/service/transcribestreaming/eventstream"
+	transcribestreaming "github.com/aws/aws-sdk-go-v2/service/transcribestreaming"
+    tstream "github.com/aws/aws-sdk-go-v2/service/transcribestreaming/types"
+    transcribeevent "github.com/aws/aws-sdk-go-v2/service/transcribestreaming/eventstream"
 )
 
 var translator *translation.Translator
+var transcribeClient *transcribestreaming.Client //AWS Transcribe
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -42,6 +54,7 @@ var upgrader = websocket.Upgrader{
 }
 
 var pollyClient *polly.Client
+
 
 type Stream struct {
 	Speakers    map[string]*Speaker
@@ -126,6 +139,10 @@ func init() {
 
 	pollyClient = polly.NewFromConfig(awsCfg)
 	log.Println("AWS Polly client initialized successfully")
+
+	//AWS Transcribe
+	transcribeClient = transcribestreaming.NewFromConfig(awsCfg)
+	log.Println("AWS Transcribe client initialized successfully")
 
 	// Initialize translator
 	var translatorErr error
@@ -254,6 +271,11 @@ func main() {
 		handleWebSocket(c)
 	})
 
+	//AWS Transcribe
+	router.GET("/ws-audio", func(c *gin.Context) {
+		handleAudioWebSocket(c)
+	})		
+
 	//The folllowing router.GET was added for OAuth
 	router.GET("/login", func(c *gin.Context) {
 		url := oauthConfig.AuthCodeURL(oauthStateString)
@@ -366,6 +388,90 @@ func main() {
 		log.Fatal("Failed to start server:", err)
 	}
 }
+
+// func handleAudioWebSocket(c *gin.Context) {
+// 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+// 	if err != nil {
+// 		log.Printf("WebSocket upgrade failed: %v", err)
+// 		return
+// 	}
+// 	defer conn.Close()
+
+// 	// Configure transcription input
+// 	// input := &transcribestreaming.StartStreamTranscriptionInput{
+// 	// 	LanguageCode:         transcribetypes.LanguageCodeEnUS,
+// 	// 	MediaEncoding:        transcribetypes.MediaEncodingPcm,
+// 	// 	MediaSampleRateHertz: 16000,
+// 	// }
+// 	input := &transcribestreaming.StartStreamTranscriptionInput{
+// 		LanguageCode:         "en-US",
+// 		MediaEncoding:        tstream.MediaEncodingPcm,
+// 		MediaSampleRateHertz: 16000,
+// 	}
+	
+// 	// Create input/output handlers
+// 	stream, err := transcribeClient.StartStreamTranscription(context.TODO(), input,
+// 		transcribestreaming.WithReader(audioReader),   // Your mic audio stream
+// 		transcribestreaming.WithEventStreamHandler(transcribestreaming.EventStreamHandlerFunc(handleTranscriptEvent)),
+// 	)
+
+// 	// Start AWS Transcribe streaming
+// 	stream, err := transcribeClient.StartStreamTranscription(context.TODO(), input)
+// 	if err != nil {
+// 		log.Printf("Failed to start transcription stream: %v", err)
+// 		return
+// 	}
+// 	defer stream.Close()
+
+// 	// Start writer (audio to Transcribe)
+// 	go func() {
+// 		for {
+// 			messageType, audioChunk, err := conn.ReadMessage()
+// 			if err != nil {
+// 				log.Printf("Audio read error: %v", err)
+// 				break
+// 			}
+// 			if messageType != websocket.BinaryMessage {
+// 				continue // ignore non-audio messages
+// 			}
+// 			err = stream.Writer.Write(audioChunk)
+// 			if err != nil {
+// 				log.Printf("Transcribe write error: %v", err)
+// 				break
+// 			}
+// 		}
+// 		stream.Writer.Close() // signal we're done sending
+// 	}()
+
+// 	// Read transcription results
+// 	for event := range stream.TranscriptResultStream.Events() {
+// 		switch e := event.(type) {
+// 		case *transcribetypes.TranscriptEvent:
+// 			for _, result := range e.Transcript.Results {
+// 				if len(result.Alternatives) > 0 && !result.IsPartial {
+// 					text := *result.Alternatives[0].Transcript
+// 					log.Printf("AWS Transcribed: %s", text)
+
+// 					// Translate + broadcast (just log for now)
+// 					translatedText, err := translator.Translate(text, "en", "es") // temp: hardcoded "en" to "es"
+// 					if err != nil {
+// 						log.Printf("Translation failed: %v", err)
+// 					} else {
+// 						log.Printf("Translated: %s", translatedText)
+
+// 						response := map[string]interface{}{
+// 							"type":        "translation",
+// 							"original":    text,
+// 							"translation": translatedText,
+// 						}
+// 						respJSON, _ := json.Marshal(response)
+// 						conn.WriteMessage(websocket.TextMessage, respJSON)
+// 					}
+// 				}
+// 			}
+// 		}
+// 	}
+// }
 
 func handleWebSocket(c *gin.Context) {
 	role := c.Query("role")
@@ -648,3 +754,85 @@ func handlePollyTTS(c *gin.Context) {
 	log.Printf("Successfully streamed audio to client")
 	log.Println("=== POLLY TTS ENDPOINT COMPLETED ===")
 }
+
+func handleAudioWebSocket(c *gin.Context) {
+    lang := c.Query("lang")
+    if lang == "" {
+        lang = "en-US"
+    }
+
+    conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+    if err != nil {
+        log.Printf("WebSocket upgrade failed: %v", err)
+        return
+    }
+
+    reader, writer := io.Pipe()
+
+    input := &transcribestreaming.StartStreamTranscriptionInput{
+        LanguageCode:         transcribetypes.LanguageCode(lang),
+        MediaEncoding:        transcribetypes.MediaEncodingPcm,
+        // MediaSampleRateHertz: int32(16000),
+		MediaSampleRateHertz: aws.Int32(16000),
+    }
+
+    go func() {
+        _, err := transcribeClient.StartStreamTranscription(context.TODO(), input,
+            transcribestreaming.WithReader(reader),
+            transcribestreaming.WithEventStreamHandler(transcribestreaming.EventStreamHandlerFunc(
+                func(ctx context.Context, stream transcribetypes.EventStream) error {
+                    for event := range stream.Events() {
+                        switch ev := event.(type) {
+                        case *transcribetypes.TranscriptEvent:
+                            for _, result := range ev.Transcript.Results {
+                                if len(result.Alternatives) > 0 && !result.IsPartial {
+                                    text := *result.Alternatives[0].Transcript
+                                    log.Printf("AWS Transcribed: %s", text)
+
+                                    translatedText, err := translator.Translate(text, "en", "es")
+                                    if err != nil {
+                                        log.Printf("Translation failed: %v", err)
+                                        continue
+                                    }
+
+                                    response := map[string]interface{}{
+                                        "type":        "translation",
+                                        "original":    text,
+                                        "translation": translatedText,
+                                    }
+                                    respJSON, _ := json.Marshal(response)
+                                    conn.WriteMessage(websocket.TextMessage, respJSON)
+                                }
+                            }
+                        }
+                    }
+                    return nil
+                }),
+            ),
+        )
+        if err != nil {
+            log.Printf("Transcribe stream error: %v", err)
+        }
+    }()
+
+    for {
+        messageType, audioChunk, err := conn.ReadMessage()
+        if err != nil {
+            log.Printf("Audio read error: %v", err)
+            break
+        }
+        if messageType != websocket.BinaryMessage {
+            continue
+        }
+        _, err = writer.Write(audioChunk)
+        if err != nil {
+            log.Printf("Pipe write error: %v", err)
+            break
+        }
+    }
+
+    conn.Close()
+    writer.Close()
+    log.Printf("WebSocket and stream closed")
+}
+
