@@ -84,7 +84,7 @@ type TranscriptionStream struct {
 	SpeakerID      string
 	SourceLanguage string
 	LastActive     time.Time
-	EventStream    *transcribestreaming.StartStreamTranscriptionEventStream
+	EventStream    *transcribestreaming.StartStreamTranscriptionOutput
 	Context        context.Context
 	Cancel         context.CancelFunc
 }
@@ -323,8 +323,8 @@ func (m *TranscriptionManager) ProcessAudioChunk(sessionID string, audioData []b
 	audioEvent := transcribeTypes.AudioEvent{
 		AudioChunk: audioData,
 	}
-	
-	err := eventStream.Send(context.Background(), &transcribestreaming.AudioStreamEvent{
+
+	err := eventStream.GetStream().Send(context.Background(), &transcribestreaming.AudioStreamEvent{
 		AudioEvent: &audioEvent,
 	})
 	
@@ -339,7 +339,7 @@ func (m *TranscriptionManager) ProcessAudioChunk(sessionID string, audioData []b
 // processTranscriptionEvents handles the stream of events from AWS Transcribe
 func (m *TranscriptionManager) processTranscriptionEvents(
 	sessionID string, 
-	stream *transcribestreaming.StartStreamTranscriptionEventStream, 
+	stream *transcribestreaming.StartStreamTranscriptionOutput, 
 	handler *TranscriptEventHandler) {
 	
 	defer func() {
@@ -351,7 +351,7 @@ func (m *TranscriptionManager) processTranscriptionEvents(
 	}()
 	
 	for {
-		event, err := stream.Events.Recv(context.Background())
+		event, err := stream.GetStream().Events.Recv(context.Background())
 		if err != nil {
 			// Check if it's just the context being canceled
 			if m.isStreamActive(sessionID) {
@@ -391,7 +391,7 @@ func (h *TranscriptEventHandler) handleTranscriptEvent(event *transcribeTypes.Tr
 		transcript := result.Alternatives[0].Transcript
 		
 		// If this is a final result, send it through the translation pipeline
-		if result.IsPartial == nil || !*result.IsPartial {
+		if !result.IsPartial {
 			// Format the recognized text message
 			recognizedTextMsg := map[string]interface{}{
 				"type":     "recognizedText",
