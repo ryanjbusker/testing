@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/polly"
 	"github.com/aws/aws-sdk-go-v2/service/polly/types"
+
+	// Add Deepgram SDK imports
+	dgclient "github.com/deepgram/deepgram-go-sdk/pkg/client/listen/v1/websocket"
+	clientinterfaces "github.com/deepgram/deepgram-go-sdk/pkg/client/interfaces"
+	msginterfaces "github.com/deepgram/deepgram-go-sdk/pkg/api/listen/v1/websocket/interfaces"
+	client "github.com/deepgram/deepgram-go-sdk/pkg/client/listen"
 )
 
 var translator *translation.Translator
@@ -43,6 +50,9 @@ var upgrader = websocket.Upgrader{
 
 var pollyClient *polly.Client
 
+// Add Deepgram API key
+var deepgramAPIKey string
+
 type Stream struct {
 	Speakers    map[string]*Speaker
 	Audience    map[string]*Audience
@@ -53,15 +63,203 @@ type Stream struct {
 }
 
 type Speaker struct {
-	Conn       *websocket.Conn
-	Language   string
-	LastActive time.Time
+	Conn              *websocket.Conn
+	Language          string
+	LastActive        time.Time
+	DeepgramClient    *dgclient.WSCallback // Add Deepgram client for each speaker
+	DeepgramCtx       context.Context
+	DeepgramCancelCtx context.CancelFunc
 }
 
 type Audience struct {
 	Conn       *websocket.Conn
 	Language   string
 	LastActive time.Time
+}
+
+// Implement Deepgram callback interface
+type DeepgramCallback struct {
+	SourceLang  string
+	SpeakerID   string
+	SpeakerConn *websocket.Conn
+	sb          *strings.Builder  // String builder to accumulate transcription
+}
+
+// Message implements the LiveMessageCallback interface for handling message responses
+func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
+	// Skip empty transcripts
+	sentence := strings.TrimSpace(mr.Channel.Alternatives[0].Transcript)
+	if len(mr.Channel.Alternatives) == 0 || len(sentence) == 0 {
+		return nil
+	}
+
+	// Process the transcription
+	log.Printf("[Deepgram] Transcription: %s (Final: %v)", sentence, mr.IsFinal)
+
+	if mr.IsFinal {
+		// Add to the string builder
+		cb.sb.WriteString(sentence)
+		cb.sb.WriteString(" ")
+
+		// When speech is final, send the complete transcription
+		if mr.SpeechFinal {
+			completedText := cb.sb.String()
+			log.Printf("[Deepgram] Final speech: %s", completedText)
+			
+			// Send the transcript to the speaker
+			speechMsg := map[string]interface{}{
+				"type":     "transcription",
+				"text":     completedText,
+				"language": cb.SourceLang,
+			}
+			speechJSON, _ := json.Marshal(speechMsg)
+			if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, speechJSON); err != nil {
+				log.Printf("Failed to send transcription back to speaker: %v", err)
+			}
+			
+			// Process translations for audience members
+			cb.processTranslations(completedText)
+			
+			// Reset the buffer for the next utterance
+			cb.sb.Reset()
+		}
+	} else {
+		// For interim results, just log them
+		log.Printf("[Deepgram] Interim result: %s", sentence)
+		
+		// Optionally send interim results to the speaker
+		// This would let them see partial transcriptions as they speak
+		interimMsg := map[string]interface{}{
+			"type":     "interim",
+			"text":     sentence,
+			"language": cb.SourceLang,
+		}
+		interimJSON, _ := json.Marshal(interimMsg)
+		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, interimJSON); err != nil {
+			log.Printf("Failed to send interim transcription to speaker: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// Open implements the LiveMessageCallback interface
+func (cb *DeepgramCallback) Open(ocr *msginterfaces.OpenResponse) error {
+	log.Printf("[Deepgram] Connection opened for speaker: %s", cb.SpeakerID)
+	return nil
+}
+
+// Metadata implements the LiveMessageCallback interface
+func (cb *DeepgramCallback) Metadata(md *msginterfaces.MetadataResponse) error {
+	log.Printf("[Deepgram] Metadata received - RequestID: %s, Channels: %d", 
+		strings.TrimSpace(md.RequestID), md.Channels)
+	return nil
+}
+
+// SpeechStarted implements the LiveMessageCallback interface
+func (cb *DeepgramCallback) SpeechStarted(ssr *msginterfaces.SpeechStartedResponse) error {
+	log.Printf("[Deepgram] Speech started for speaker: %s", cb.SpeakerID)
+	return nil
+}
+
+// UtteranceEnd implements the LiveMessageCallback interface
+func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse) error {
+	utterance := strings.TrimSpace(cb.sb.String())
+	if len(utterance) > 0 {
+		log.Printf("[Deepgram] Utterance end: %s", utterance)
+		
+		// Send the final utterance to the speaker
+		utteranceMsg := map[string]interface{}{
+			"type":     "transcription",
+			"text":     utterance,
+			"language": cb.SourceLang,
+			"final":    true,
+		}
+		utteranceJSON, _ := json.Marshal(utteranceMsg)
+		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, utteranceJSON); err != nil {
+			log.Printf("Failed to send utterance to speaker: %v", err)
+		}
+		
+		// Process translations for the audience
+		cb.processTranslations(utterance)
+		
+		// Reset the buffer for the next utterance
+		cb.sb.Reset()
+	} else {
+		log.Printf("[Deepgram] Empty utterance end received")
+	}
+	return nil
+}
+
+// Close implements the LiveMessageCallback interface
+func (cb *DeepgramCallback) Close(closeResponse *msginterfaces.CloseResponse) error {
+	log.Printf("[Deepgram] Connection closed for speaker: %s", cb.SpeakerID)
+	return nil
+}
+
+// Error implements the LiveMessageCallback interface for handling error responses
+func (cb *DeepgramCallback) Error(errorResponse *msginterfaces.ErrorResponse) error {
+	log.Printf("[Deepgram] Error received - Type: %s, Code: %s, Description: %s", 
+		errorResponse.Type, errorResponse.ErrCode, errorResponse.Description)
+	return nil
+}
+
+// UnhandledEvent implements the LiveMessageCallback interface
+func (cb *DeepgramCallback) UnhandledEvent(byData []byte) error {
+	log.Printf("[Deepgram] Unhandled event received: %s", string(byData))
+	return nil
+}
+
+// Helper method to process translations for all audience members
+func (cb *DeepgramCallback) processTranslations(text string) {
+	mu.RLock()
+	// Group audience by target language
+	audienceByLang := make(map[string][]*websocket.Conn)
+	for _, audience := range stream.Audience {
+		audienceByLang[audience.Language] = append(audienceByLang[audience.Language], audience.Conn)
+	}
+	mu.RUnlock()
+	
+	// Translate once per target language
+	translations := make(map[string]string)
+	translationErrors := make(map[string]error)
+	for targetLang := range audienceByLang {
+		translatedText, err := translateText(text, cb.SourceLang, targetLang)
+		if err != nil {
+			log.Printf("Translation error from %s to %s: %v", cb.SourceLang, targetLang, err)
+			translationErrors[targetLang] = err
+			continue
+		}
+		translations[targetLang] = translatedText
+		log.Printf("Translated '%s' (%s) to '%s' (%s)", text, cb.SourceLang, translatedText, targetLang)
+	}
+	
+	// Send translated text to relevant audience groups
+	for targetLang, conns := range audienceByLang {
+		translatedText, ok := translations[targetLang]
+		if !ok {
+			continue
+		}
+		
+		response := map[string]interface{}{
+			"type":     "translation",
+			"text":     translatedText,
+			"speaker":  cb.SpeakerID,
+			"original": text,
+		}
+		responseJSON, err := json.Marshal(response)
+		if err != nil {
+			log.Printf("Error marshalling translation response: %v", err)
+			continue
+		}
+		
+		// Send to all connections in this language group
+		for _, audienceConn := range conns {
+			if err := audienceConn.WriteMessage(websocket.TextMessage, responseJSON); err != nil {
+				log.Printf("Error sending translation to audience %s: %v", audienceConn.RemoteAddr().String(), err)
+			}
+		}
+	}
 }
 
 var (
@@ -91,6 +289,20 @@ func init() {
 	if key == "" {
 		log.Fatal("SESSION_KEY is empty or not set in .env")
 	}
+
+	// Get Deepgram API key
+	deepgramAPIKey = os.Getenv("DEEPGRAM_API_KEY")
+	if deepgramAPIKey == "" {
+		log.Println("Warning: DEEPGRAM_API_KEY is not set in .env")
+	} else {
+		log.Println("Deepgram API key loaded successfully")
+	}
+	
+	// Initialize the Deepgram client
+	client.Init(client.InitLib{
+		LogLevel: client.LogLevelDefault, // Can be LogLevelDefault, LogLevelFull, LogLevelDebug, LogLevelTrace
+	})
+	log.Println("Deepgram client initialized successfully")
 
 	//Initialize session store using the loaded key
 	store = sessions.NewCookieStore([]byte(key))
@@ -329,15 +541,6 @@ func main() {
 		c.Redirect(http.StatusSeeOther, "/")
 	})
 
-	// router.GET("/account", func(c *gin.Context) {
-	//  session, _ := store.Get(c.Request, "session-name")
-	//  email, ok := session.Values["email"].(string)
-	//  if !ok || email == "" {
-	//      c.Redirect(http.StatusSeeOther, "/")
-	//      return
-	//  }
-	//  c.File("templates/account.html")
-	// })
 	router.GET("/account", func(c *gin.Context) {
 		log.Printf("Serving account.html")
 		c.HTML(http.StatusOK, "account.html", gin.H{
@@ -397,22 +600,104 @@ func handleWebSocket(c *gin.Context) {
 
 	if role == "speaker" {
 		speakerID := conn.RemoteAddr().String()
-		speaker := &Speaker{
-			Conn:       conn,
-			Language:   lang,
-			LastActive: time.Now(),
+		
+		// Create context for Deepgram client
+		ctx, cancel := context.WithCancel(context.Background())
+		
+		// Set up Deepgram transcription options
+		transcriptionOptions := &clientinterfaces.LiveTranscriptionOptions{
+			Language:        lang,             // Language from client
+			Model:           "nova-2",         // Use Nova-2 model
+			Punctuate:       true,             // Add punctuation
+			Encoding:        "linear16",       // Linear PCM encoding
+			SampleRate:      16000,            // 16kHz sample rate
+			Channels:        1,                // Mono audio
+			SmartFormat:     true,             // Apply smart formatting
+			InterimResults:  true,             // Get intermediate results
+			UtteranceEndMs:  "1000",           // End utterance after 1 second of silence
+			VadEvents:       true,             // Voice activity detection events
 		}
-		stream.Speakers[speakerID] = speaker
-		log.Printf("Added speaker %s", speakerID)
-		defer func() {
+		
+		// Create Deepgram callback with string builder for accumulating text
+		callback := &DeepgramCallback{
+			SourceLang:  lang,
+			SpeakerID:   speakerID,
+			SpeakerConn: conn,
+			sb:          &strings.Builder{},
+		}
+		
+		// Client options
+		clientOptions := &clientinterfaces.ClientOptions{
+			EnableKeepAlive: true,  // Keep the connection alive
+		}
+		
+		// Initialize Deepgram client
+		deepgramClient, err := client.NewWSUsingCallbackWithCancel(
+			ctx,
+			cancel,
+			deepgramAPIKey,
+			clientOptions,
+			transcriptionOptions,
+			callback,
+		)
+		
+		if err != nil {
+			log.Printf("Failed to create Deepgram client: %v", err)
 			conn.Close()
+			return
+		}
+		
+		// Connect to Deepgram WebSocket API
+		connected := deepgramClient.Connect()
+		if !connected {
+			log.Printf("Failed to connect to Deepgram WebSocket API")
+			cancel()
+			conn.Close()
+			return
+		}
+		
+		log.Printf("Connected to Deepgram WebSocket for speaker %s", speakerID)
+		
+		speaker := &Speaker{
+			Conn:              conn,
+			Language:          lang,
+			LastActive:        time.Now(),
+			DeepgramClient:    deepgramClient,
+			DeepgramCtx:       ctx,
+			DeepgramCancelCtx: cancel,
+		}
+		
+		mu.Lock()
+		stream.Speakers[speakerID] = speaker
+		mu.Unlock()
+		
+		log.Printf("Added speaker %s", speakerID)
+		
+		defer func() {
+			// Close Deepgram connection
+			deepgramClient.Stop()
+			cancel()
+			
+			// Close WebSocket connection
+			conn.Close()
+			
+			// Remove speaker from stream
+			mu.Lock()
 			delete(stream.Speakers, speakerID)
+			mu.Unlock()
+			
 			log.Printf("Speaker %s left", speakerID)
+			
+			// Check if stream is still active
+			mu.RLock()
 			if len(stream.Speakers) == 0 && len(stream.Audience) == 0 {
 				stream.IsActive = false
 				log.Printf("Stream is now inactive")
 			}
+			mu.RUnlock()
+			
 			// Notify others that this speaker left
+			mu.RLock()
 			if len(stream.Audience) > 0 {
 				leaveMsg := map[string]interface{}{
 					"type":    "speaker_left",
@@ -423,6 +708,7 @@ func handleWebSocket(c *gin.Context) {
 					audience.Conn.WriteMessage(websocket.TextMessage, leaveJSON)
 				}
 			}
+			mu.RUnlock()
 		}()
 	} else if role == "audience" {
 		audienceID := conn.RemoteAddr().String()
@@ -466,81 +752,51 @@ func handleWebSocket(c *gin.Context) {
 				continue
 			}
 
-			if msgType, ok := data["type"].(string); ok && msgType == "speech" {
-				text, ok := data["text"].(string)
-				if !ok || text == "" {
-					log.Printf("Received speech message with invalid or empty text")
-					continue
-				}
-
-				speakerID := conn.RemoteAddr().String()
-				mu.RLock() // Lock for reading speaker and audience data
-				speaker := stream.Speakers[speakerID]
-
-				if speaker == nil {
+			if msgType, ok := data["type"].(string); ok {
+				log.Printf("Received message type: %s", msgType)
+				
+				// Handle different message types
+				switch msgType {
+				case "audio":
+					// For audio data from speaker
+					speakerID := conn.RemoteAddr().String()
+					mu.RLock()
+					speaker := stream.Speakers[speakerID]
 					mu.RUnlock()
-					log.Printf("Received speech message from unknown speaker: %s", speakerID)
-					continue // Ignore message if speaker is not found (already disconnected?)
-				}
-
-				// --- Translation Optimization ---
-				// 1. Group audience by target language
-				audienceByLang := make(map[string][]*websocket.Conn)
-				for _, audience := range stream.Audience {
-					audienceByLang[audience.Language] = append(audienceByLang[audience.Language], audience.Conn)
-				}
-				mu.RUnlock() // Unlock after reading audience data
-
-				// 2. Translate once per target language
-				translations := make(map[string]string)
-				translationErrors := make(map[string]error)
-				for targetLang := range audienceByLang {
-					translatedText, err := translateText(text, speaker.Language, targetLang)
-					if err != nil {
-						log.Printf("Translation error from %s to %s: %v", speaker.Language, targetLang, err)
-						translationErrors[targetLang] = err // Store error
-						continue                            // Skip this language if translation fails
-					}
-					translations[targetLang] = translatedText
-					log.Printf("Translated '%s' (%s) to '%s' (%s)", text, speaker.Language, translatedText, targetLang) // Log successful translation
-				}
-
-				// 3. Send translated text to relevant audience groups
-				for targetLang, conns := range audienceByLang {
-					// Check if translation was successful for this language
-					translatedText, ok := translations[targetLang]
-					if !ok {
-						// Optionally send an error message to these clients
-						// log.Printf("Skipping sending to %s due to translation error: %v", targetLang, translationErrors[targetLang])
+					
+					if speaker == nil {
+						log.Printf("Received audio from unknown speaker: %s", speakerID)
 						continue
 					}
-
-					response := map[string]interface{}{
-						"type":     "translation",
-						"text":     translatedText,
-						"speaker":  speakerID,
-						"original": text, // Include original text for context if needed
-					}
-					responseJSON, err := json.Marshal(response)
-					if err != nil {
-						log.Printf("Error marshalling translation response: %v", err)
-						continue // Skip this group if marshalling fails
-					}
-
-					// Send to all connections in this language group
-					for _, audienceConn := range conns {
-						if err := audienceConn.WriteMessage(websocket.TextMessage, responseJSON); err != nil {
-							log.Printf("Error sending translation to audience %s: %v", audienceConn.RemoteAddr().String(), err)
-							// Handle potential write errors (e.g., remove disconnected client)
-						}
+					
+					// Check if audio data is included
+					if audioData, ok := data["data"].(string); ok && audioData != "" {
+						// Process and forward to Deepgram
+						// Note: Client will send base64 encoded audio which needs to be decoded
+						// This will be handled in the client-side code
+						log.Printf("Received audio data of length %d from speaker %s", len(audioData), speakerID)
 					}
 				}
-			} else {
-				// Handle other message types if necessary
-				log.Printf("Received non-speech message or unknown type: %v", data)
 			}
-		} else {
-			log.Printf("Received non-text message type: %d", messageType)
+		} else if messageType == websocket.BinaryMessage {
+			// This is a binary audio message
+			speakerID := conn.RemoteAddr().String()
+			mu.RLock()
+			speaker := stream.Speakers[speakerID]
+			mu.RUnlock()
+			
+			if speaker == nil {
+				log.Printf("Received binary audio from unknown speaker: %s", speakerID)
+				continue
+			}
+			
+			// Send the binary audio data directly to Deepgram
+			if speaker.DeepgramClient != nil {
+				_, err := speaker.DeepgramClient.Write(message)
+				if err != nil {
+					log.Printf("Error sending audio to Deepgram: %v", err)
+				}
+			}
 		}
 	}
 }

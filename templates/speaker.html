@@ -30,13 +30,6 @@
         <div class="content-box">
             <div class="form-group">
                 <label for="sourceLanguage">Your Language</label>
-                <!-- <select id="sourceLanguage" class="form-control">
-                    <option value="en-US">English (US)</option>
-                    <option value="es-ES">Spanish</option>
-                    <option value="fr-FR">French</option>
-                    <option value="de-DE">German</option>
-                    <option value="it-IT">Italian</option>
-                </select> -->
                 <select id="sourceLanguage" class="form-control">
                     <option value="en">English</option>
                     <option value="ar">Arabic</option>
@@ -57,7 +50,6 @@
                     <option value="sv">Swedish</option>
                     <option value="tr">Turkish</option>
                 </select>
-                
             </div>
 
             <div class="button-group">
@@ -80,24 +72,21 @@
     </div>
 
     <script>
-        let recognition = null;
+        // Audio recording and streaming variables
         let ws = null;
-        let speechBuffer = '';
-        let lastTranslationTime = 0;
-        let lastSentText = '';
-        let isRecognitionActive = false;
-        const TRANSLATION_DEBOUNCE = 500; // Reduced to 500ms for more responsive output
-        const RECOGNITION_RESTART_DELAY = 100; // 100ms delay before restarting recognition
-        const SENTENCE_ENDINGS = /[.!?]\s+/; // Regular expression for sentence endings
+        let audioContext = null;
+        let microphone = null;
+        let processor = null;
+        let isRecording = false;
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const statusDiv = document.getElementById('status');
         const recognizedTextDiv = document.getElementById('recognizedText');
         const sourceLanguage = document.getElementById('sourceLanguage');
-
-        function isCompleteSentence(text) {
-            return SENTENCE_ENDINGS.test(text) || text.trim().endsWith('?') || text.trim().endsWith('!') || text.trim().endsWith('.');
-        }
+        
+        // Constants for audio processing
+        const SAMPLE_RATE = 16000; // 16kHz sample rate for best compatibility with Deepgram
+        const BUFFER_SIZE = 4096;  // Buffer size for audio processing
 
         function connectWebSocket() {
             if (ws) {
@@ -133,6 +122,17 @@
                         console.log('Successfully connected to stream');
                         statusDiv.textContent = 'Connected';
                         startButton.disabled = false;
+                    } else if (data.type === 'transcription') {
+                        // Display the final transcribed text from Deepgram
+                        recognizedTextDiv.textContent = data.text;
+                        
+                        // Show final status
+                        if (data.final) {
+                            statusDiv.textContent = 'Speech completed. Ready for more.';
+                        }
+                    } else if (data.type === 'interim') {
+                        // Display interim results with visual indicator
+                        recognizedTextDiv.textContent = data.text + "...";
                     }
                 };
 
@@ -158,95 +158,105 @@
             startButton.disabled = true;
             stopButton.disabled = true;
             recognizedTextDiv.textContent = 'Your speech will appear here...';
-            if (recognition) {
-                stopRecognition();
-            }
+            stopRecording();
         }
 
-        function startRecognition() {
-            if (!recognition) {
-                recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                recognition.lang = sourceLanguage.value;
-
-                recognition.onresult = (event) => {
-                    const transcript = Array.from(event.results)
-                        .map(result => result[0].transcript)
-                        .join('');
-
-                    recognizedTextDiv.textContent = transcript;
+        // Start recording and streaming audio
+        async function startRecording() {
+            try {
+                if (!audioContext) {
+                    // Initialize AudioContext
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: SAMPLE_RATE
+                    });
                     
-                    // Only send new text that hasn't been sent before
-                    const newText = transcript.slice(lastSentText.length);
-                    if (newText.trim()) {
-                        // Update speech buffer with only the new text
-                        speechBuffer = newText;
-                        
-                        // Check if we have a complete sentence or enough time has passed
-                        const now = Date.now();
-                        if (isCompleteSentence(speechBuffer) || (now - lastTranslationTime >= TRANSLATION_DEBOUNCE && speechBuffer.length > 10)) {
-                            if (ws && ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({
-                                    type: "speech",
-                                    text: speechBuffer,
-                                    language: sourceLanguage.value
-                                }));
-                                lastTranslationTime = now;
-                                lastSentText = transcript;
-                                speechBuffer = ''; // Clear the buffer after sending
-                            }
+                    // Get microphone stream
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            channelCount: 1,           // Mono audio
+                            echoCancellation: true,    // Enable echo cancellation
+                            noiseSuppression: true,    // Enable noise suppression
+                            autoGainControl: true      // Enable auto gain control
                         }
-                    }
-                };
-
-                recognition.onerror = (event) => {
-                    statusDiv.textContent = 'Error: ' + event.error;
-                    if (isRecognitionActive) {
-                        setTimeout(() => {
-                            recognition.start();
-                        }, RECOGNITION_RESTART_DELAY);
-                    }
-                };
-
-                recognition.onend = () => {
-                    // Restart recognition if it ends unexpectedly
-                    if (isRecognitionActive) {
-                        setTimeout(() => {
-                            recognition.start();
-                        }, RECOGNITION_RESTART_DELAY);
-                    }
-                };
+                    });
+                    
+                    // Create microphone source
+                    microphone = audioContext.createMediaStreamSource(stream);
+                    
+                    // Create script processor node for audio processing
+                    processor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
+                    
+                    // Process audio data
+                    processor.onaudioprocess = (e) => {
+                        if (!isRecording || !ws || ws.readyState !== WebSocket.OPEN) {
+                            return;
+                        }
+                        
+                        // Get audio data from input buffer
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        
+                        // Convert float32 array to Int16 array (required format for Deepgram)
+                        const int16Data = convertFloat32ToInt16(inputData);
+                        
+                        // Send binary audio data to server
+                        if (ws && ws.readyState === WebSocket.OPEN) {
+                            ws.send(int16Data.buffer);
+                        }
+                    };
+                    
+                    // Connect nodes
+                    microphone.connect(processor);
+                    processor.connect(audioContext.destination);
+                }
+                
+                isRecording = true;
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                statusDiv.textContent = 'Speaking...';
+                
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                statusDiv.textContent = 'Error: Failed to access microphone';
             }
-
-            isRecognitionActive = true;
-            recognition.start();
-            startButton.disabled = true;
-            stopButton.disabled = false;
-            statusDiv.textContent = 'Speaking...';
-            lastSentText = ''; // Reset last sent text when starting
-            speechBuffer = ''; // Clear the buffer when starting
         }
 
-        function stopRecognition() {
-            if (recognition) {
-                isRecognitionActive = false;
-                recognition.stop();
+        // Stop recording and streaming audio
+        function stopRecording() {
+            if (isRecording) {
+                isRecording = false;
+                
+                // Disconnect microphone and processor
+                if (microphone && processor) {
+                    microphone.disconnect(processor);
+                    processor.disconnect(audioContext.destination);
+                }
+                
+                // Reset UI
                 startButton.disabled = false;
                 stopButton.disabled = true;
                 statusDiv.textContent = 'Stopped';
-                speechBuffer = '';
-                lastSentText = ''; // Reset last sent text when stopping
             }
         }
 
-        startButton.addEventListener('click', startRecognition);
-        stopButton.addEventListener('click', stopRecognition);
-        sourceLanguage.addEventListener('change', () => {
-            if (recognition) {
-                recognition.lang = sourceLanguage.value;
+        // Helper function to convert Float32Array to Int16Array for proper audio encoding
+        function convertFloat32ToInt16(float32Array) {
+            const int16Array = new Int16Array(float32Array.length);
+            for (let i = 0; i < float32Array.length; i++) {
+                // Convert float32 (-1.0 to 1.0) to int16 (-32768 to 32767)
+                const s = Math.max(-1, Math.min(1, float32Array[i]));
+                int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
-            lastSentText = ''; // Reset last sent text when changing language
+            return int16Array;
+        }
+
+        startButton.addEventListener('click', startRecording);
+        stopButton.addEventListener('click', stopRecording);
+        sourceLanguage.addEventListener('change', () => {
+            // Reset and reconnect WebSocket when language changes
+            if (isRecording) {
+                stopRecording();
+            }
+            connectWebSocket();
         });
 
         // Connect to WebSocket when page loads
@@ -257,11 +267,10 @@
             if (ws) {
                 ws.close();
             }
-            if (recognition) {
-                recognition.stop();
+            if (isRecording) {
+                stopRecording();
             }
         };
-
         
         const loginBtn = document.getElementById("login-btn");
         const logoutBtn = document.getElementById("logout-btn");
@@ -287,4 +296,4 @@
             });
     </script>
 </body>
-</html> 
+</html>
