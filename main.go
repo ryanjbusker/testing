@@ -845,7 +845,7 @@ func handlePollyTTS(c *gin.Context) {
 		case "es-ES":
 			voiceId = types.VoiceId("Lucia")
 		case "fr-FR":
-			voiceId = types.VoiceId("Lea")
+			voiceId = types.VoiceId("Celine")
 		case "de-DE":
 			voiceId = types.VoiceId("Vicki")
 		case "it-IT":
