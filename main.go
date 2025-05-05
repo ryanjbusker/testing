@@ -75,6 +75,7 @@ type Audience struct {
 	Conn       *websocket.Conn
 	Language   string
 	LastActive time.Time
+	SpeakerID  string // <- add this field
 }
 
 // Implement Deepgram callback interface
@@ -216,7 +217,9 @@ func (cb *DeepgramCallback) processTranslations(text string) {
 	// Group audience by target language
 	audienceByLang := make(map[string][]*websocket.Conn)
 	for _, audience := range stream.Audience {
-		audienceByLang[audience.Language] = append(audienceByLang[audience.Language], audience.Conn)
+		if audience.SpeakerID == cb.SpeakerID {
+			audienceByLang[audience.Language] = append(audienceByLang[audience.Language], audience.Conn)
+		}
 	}
 	mu.RUnlock()
 	
@@ -573,6 +576,8 @@ func main() {
 func handleWebSocket(c *gin.Context) {
 	role := c.Query("role")
 	lang := c.Query("lang")
+	speakerID := c.Query("id") // For speakers
+	// audienceSpeakerID := c.Query("speaker") // For audience selecting a speaker
 
 	log.Printf("WebSocket connection request - Role: %s", role)
 
@@ -599,7 +604,26 @@ func handleWebSocket(c *gin.Context) {
 	}
 
 	if role == "speaker" {
-		speakerID := conn.RemoteAddr().String()
+		// speakerID := conn.RemoteAddr().String()
+		speakerID := c.Query("id")
+		if speakerID == "" {
+			log.Printf("Missing speaker ID in query")
+			conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Missing speaker ID"}`))
+			conn.Close()
+			return
+		}
+		mu.RLock()
+		_, exists := stream.Speakers[speakerID]
+		mu.RUnlock()
+
+		if exists {
+			log.Printf("Speaker ID %s is already in use", speakerID)
+			conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Speaker ID already in use"}`))
+			conn.Close()
+			return
+		}
+
+
 		
 		// Create context for Deepgram client
 		ctx, cancel := context.WithCancel(context.Background())
@@ -716,6 +740,7 @@ func handleWebSocket(c *gin.Context) {
 			Conn:       conn,
 			Language:   lang,
 			LastActive: time.Now(),
+			SpeakerID:  speakerID, // <- Store their selected speaker
 		}
 		mu.Lock() // Use write lock to modify the stream
 		stream.Audience[audienceID] = audience
@@ -759,7 +784,14 @@ func handleWebSocket(c *gin.Context) {
 				switch msgType {
 				case "audio":
 					// For audio data from speaker
-					speakerID := conn.RemoteAddr().String()
+					// speakerID := conn.RemoteAddr().String()
+					speakerID := c.Query("id")
+					if speakerID == "" {
+						log.Printf("Missing speaker ID in query")
+						conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Missing speaker ID"}`))
+						conn.Close()
+						return
+					}
 					mu.RLock()
 					speaker := stream.Speakers[speakerID]
 					mu.RUnlock()
@@ -780,7 +812,14 @@ func handleWebSocket(c *gin.Context) {
 			}
 		} else if messageType == websocket.BinaryMessage {
 			// This is a binary audio message
-			speakerID := conn.RemoteAddr().String()
+			// speakerID := conn.RemoteAddr().String()
+			speakerID := c.Query("id")
+			if speakerID == "" {
+				log.Printf("Missing speaker ID in query")
+				conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Missing speaker ID"}`))
+				conn.Close()
+				return
+			}
 			mu.RLock()
 			speaker := stream.Speakers[speakerID]
 			mu.RUnlock()
