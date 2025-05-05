@@ -78,12 +78,13 @@
         let microphone = null;
         let processor = null;
         let isRecording = false;
+        let mediaStream = null;
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const statusDiv = document.getElementById('status');
         const recognizedTextDiv = document.getElementById('recognizedText');
         const sourceLanguage = document.getElementById('sourceLanguage');
-        
+    
         // Constants for audio processing
         const SAMPLE_RATE = 16000; // 16kHz sample rate for best compatibility with Deepgram
         const BUFFER_SIZE = 4096;  // Buffer size for audio processing
@@ -171,18 +172,29 @@
                     });
                     
                     // Get microphone stream
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            channelCount: 1,           // Mono audio
-                            echoCancellation: true,    // Enable echo cancellation
-                            noiseSuppression: true,    // Enable noise suppression
-                            autoGainControl: true      // Enable auto gain control
-                        }
-                    });
+                    // const stream = await navigator.mediaDevices.getUserMedia({
+                    //     audio: {
+                    //         channelCount: 1,           // Mono audio
+                    //         echoCancellation: true,    // Enable echo cancellation
+                    //         noiseSuppression: true,    // Enable noise suppression
+                    //         autoGainControl: true      // Enable auto gain control
+                    //     }
+                    // });
                     
                     // Create microphone source
-                    microphone = audioContext.createMediaStreamSource(stream);
-                    
+                    // microphone = audioContext.createMediaStreamSource(stream);
+                    // microphone = audioContext.createMediaStreamSource(mediaStream);
+
+                    mediaStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            channelCount: 1,
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true
+                        }
+                    });
+                    microphone = audioContext.createMediaStreamSource(mediaStream);
+
                     // Create script processor node for audio processing
                     processor = audioContext.createScriptProcessor(BUFFER_SIZE, 1, 1);
                     
@@ -207,6 +219,7 @@
                     // Connect nodes
                     microphone.connect(processor);
                     processor.connect(audioContext.destination);
+
                 }
                 
                 isRecording = true;
@@ -235,6 +248,21 @@
                 startButton.disabled = false;
                 stopButton.disabled = true;
                 statusDiv.textContent = 'Stopped';
+
+
+                if (mediaStream) {
+                    mediaStream.getTracks().forEach(track => track.stop());
+                    mediaStream = null;
+                }
+
+                if (audioContext && audioContext.state !== 'closed') {
+                    audioContext.close().then(() => {
+                        audioContext = null;
+                        microphone = null;
+                        processor = null;
+                    });
+                }
+
             }
         }
 
