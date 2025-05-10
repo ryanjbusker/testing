@@ -327,6 +327,9 @@
                 startButton.disabled = true;
                 stopButton.disabled = false;
                 statusDiv.textContent = 'Speaking...';
+
+                document.getElementById("speakerId").disabled = true;
+                sourceLanguage.disabled = true;
                 
             } catch (error) {
                 console.error('Error starting recording:', error);
@@ -349,6 +352,10 @@
                 startButton.disabled = false;
                 stopButton.disabled = true;
                 statusDiv.textContent = 'Stopped';
+
+                document.getElementById("speakerId").disabled = false;
+                sourceLanguage.disabled = false;
+
 
 
                 if (mediaStream) {

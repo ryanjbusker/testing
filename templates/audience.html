@@ -228,6 +228,7 @@
                 connectButton.disabled = true;
                 disconnectButton.disabled = false;
                 targetLanguage.disabled = true;
+                document.getElementById("speakerId").disabled = true;
             };
 
             ws.onclose = () => {
@@ -235,6 +236,7 @@
                 connectButton.disabled = false;
                 disconnectButton.disabled = true;
                 targetLanguage.disabled = false;
+                document.getElementById("speakerId").disabled = false;
                 activeSpeakers.clear();
                 updateActiveSpeakers();
                 stopAudio(); // Stop any playing audio when disconnected
