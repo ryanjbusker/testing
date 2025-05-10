@@ -576,8 +576,8 @@ func main() {
 func handleWebSocket(c *gin.Context) {
 	role := c.Query("role")
 	lang := c.Query("lang")
-	speakerID := c.Query("id") // For speakers
-	// audienceSpeakerID := c.Query("speaker") // For audience selecting a speaker
+	// speakerID := c.Query("id") // For speakers
+	// audienceSpeakerID := c.Query("speaker")
 
 	log.Printf("WebSocket connection request - Role: %s", role)
 
@@ -735,12 +735,14 @@ func handleWebSocket(c *gin.Context) {
 			mu.RUnlock()
 		}()
 	} else if role == "audience" {
+		audienceSpeakerID := c.Query("speaker")
 		audienceID := conn.RemoteAddr().String()
 		audience := &Audience{
 			Conn:       conn,
 			Language:   lang,
 			LastActive: time.Now(),
-			SpeakerID:  speakerID, // <- Store their selected speaker
+			// SpeakerID:  speakerID, // <- Store their selected speaker
+			SpeakerID:  audienceSpeakerID,
 		}
 		mu.Lock() // Use write lock to modify the stream
 		stream.Audience[audienceID] = audience
