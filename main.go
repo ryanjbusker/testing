@@ -33,10 +33,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/polly/types"
 
 	// Add Deepgram SDK imports
-	dgclient "github.com/deepgram/deepgram-go-sdk/pkg/client/listen/v1/websocket"
-	clientinterfaces "github.com/deepgram/deepgram-go-sdk/pkg/client/interfaces"
 	msginterfaces "github.com/deepgram/deepgram-go-sdk/pkg/api/listen/v1/websocket/interfaces"
+	clientinterfaces "github.com/deepgram/deepgram-go-sdk/pkg/client/interfaces"
 	client "github.com/deepgram/deepgram-go-sdk/pkg/client/listen"
+	dgclient "github.com/deepgram/deepgram-go-sdk/pkg/client/listen/v1/websocket"
 )
 
 var translator *translation.Translator
@@ -83,7 +83,7 @@ type DeepgramCallback struct {
 	SourceLang  string
 	SpeakerID   string
 	SpeakerConn *websocket.Conn
-	sb          *strings.Builder  // String builder to accumulate transcription
+	sb          *strings.Builder // String builder to accumulate transcription
 }
 
 // Message implements the LiveMessageCallback interface for handling message responses
@@ -106,7 +106,7 @@ func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
 		if mr.SpeechFinal {
 			completedText := cb.sb.String()
 			log.Printf("[Deepgram] Final speech: %s", completedText)
-			
+
 			// Send the transcript to the speaker
 			speechMsg := map[string]interface{}{
 				"type":     "transcription",
@@ -117,17 +117,17 @@ func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
 			if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, speechJSON); err != nil {
 				log.Printf("Failed to send transcription back to speaker: %v", err)
 			}
-			
+
 			// Process translations for audience members
 			cb.processTranslations(completedText)
-			
+
 			// Reset the buffer for the next utterance
 			cb.sb.Reset()
 		}
 	} else {
 		// For interim results, just log them
 		log.Printf("[Deepgram] Interim result: %s", sentence)
-		
+
 		// Optionally send interim results to the speaker
 		// This would let them see partial transcriptions as they speak
 		interimMsg := map[string]interface{}{
@@ -152,7 +152,7 @@ func (cb *DeepgramCallback) Open(ocr *msginterfaces.OpenResponse) error {
 
 // Metadata implements the LiveMessageCallback interface
 func (cb *DeepgramCallback) Metadata(md *msginterfaces.MetadataResponse) error {
-	log.Printf("[Deepgram] Metadata received - RequestID: %s, Channels: %d", 
+	log.Printf("[Deepgram] Metadata received - RequestID: %s, Channels: %d",
 		strings.TrimSpace(md.RequestID), md.Channels)
 	return nil
 }
@@ -168,7 +168,7 @@ func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse)
 	utterance := strings.TrimSpace(cb.sb.String())
 	if len(utterance) > 0 {
 		log.Printf("[Deepgram] Utterance end: %s", utterance)
-		
+
 		// Send the final utterance to the speaker
 		utteranceMsg := map[string]interface{}{
 			"type":     "transcription",
@@ -180,10 +180,10 @@ func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse)
 		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, utteranceJSON); err != nil {
 			log.Printf("Failed to send utterance to speaker: %v", err)
 		}
-		
+
 		// Process translations for the audience
 		cb.processTranslations(utterance)
-		
+
 		// Reset the buffer for the next utterance
 		cb.sb.Reset()
 	} else {
@@ -200,7 +200,7 @@ func (cb *DeepgramCallback) Close(closeResponse *msginterfaces.CloseResponse) er
 
 // Error implements the LiveMessageCallback interface for handling error responses
 func (cb *DeepgramCallback) Error(errorResponse *msginterfaces.ErrorResponse) error {
-	log.Printf("[Deepgram] Error received - Type: %s, Code: %s, Description: %s", 
+	log.Printf("[Deepgram] Error received - Type: %s, Code: %s, Description: %s",
 		errorResponse.Type, errorResponse.ErrCode, errorResponse.Description)
 	return nil
 }
@@ -222,7 +222,7 @@ func (cb *DeepgramCallback) processTranslations(text string) {
 		}
 	}
 	mu.RUnlock()
-	
+
 	// Translate once per target language
 	translations := make(map[string]string)
 	translationErrors := make(map[string]error)
@@ -236,14 +236,14 @@ func (cb *DeepgramCallback) processTranslations(text string) {
 		translations[targetLang] = translatedText
 		log.Printf("Translated '%s' (%s) to '%s' (%s)", text, cb.SourceLang, translatedText, targetLang)
 	}
-	
+
 	// Send translated text to relevant audience groups
 	for targetLang, conns := range audienceByLang {
 		translatedText, ok := translations[targetLang]
 		if !ok {
 			continue
 		}
-		
+
 		response := map[string]interface{}{
 			"type":     "translation",
 			"text":     translatedText,
@@ -255,7 +255,7 @@ func (cb *DeepgramCallback) processTranslations(text string) {
 			log.Printf("Error marshalling translation response: %v", err)
 			continue
 		}
-		
+
 		// Send to all connections in this language group
 		for _, audienceConn := range conns {
 			if err := audienceConn.WriteMessage(websocket.TextMessage, responseJSON); err != nil {
@@ -282,6 +282,24 @@ var (
 	store            = sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
 )
 
+// Map of languages that support neural voices in AWS Polly
+var neuralVoiceSupport = map[string]bool{
+	"en-US": true, // English (US)
+	"en-GB": true, // English (British)
+	"en-AU": true, // English (Australian)
+	"en-NZ": true, // English (New Zealand)
+	"en-IN": true, // English (Indian)
+	"es-ES": true, // Spanish (European)
+	"es-MX": true, // Spanish (Mexican)
+	"fr-FR": true, // French
+	"de-DE": true, // German
+	"it-IT": true, // Italian
+	"pt-BR": true, // Portuguese (Brazilian)
+	"ja-JP": true, // Japanese
+	"ko-KR": true, // Korean
+	"zh-CN": true, // Chinese (Mandarin)
+}
+
 func init() {
 	// Load environment variables first
 	if err := godotenv.Load(); err != nil {
@@ -300,7 +318,7 @@ func init() {
 	} else {
 		log.Println("Deepgram API key loaded successfully")
 	}
-	
+
 	// Initialize the Deepgram client
 	client.Init(client.InitLib{
 		LogLevel: client.LogLevelDefault, // Can be LogLevelDefault, LogLevelFull, LogLevelDebug, LogLevelTrace
@@ -623,25 +641,23 @@ func handleWebSocket(c *gin.Context) {
 			return
 		}
 
-
-		
 		// Create context for Deepgram client
 		ctx, cancel := context.WithCancel(context.Background())
-		
+
 		// Set up Deepgram transcription options
 		transcriptionOptions := &clientinterfaces.LiveTranscriptionOptions{
-			Language:        lang,             // Language from client
-			Model:           "nova-2",         // Use Nova-2 model
-			Punctuate:       true,             // Add punctuation
-			Encoding:        "linear16",       // Linear PCM encoding
-			SampleRate:      16000,            // 16kHz sample rate
-			Channels:        1,                // Mono audio
-			SmartFormat:     true,             // Apply smart formatting
-			InterimResults:  true,             // Get intermediate results
-			UtteranceEndMs:  "1000",           // End utterance after 1 second of silence
-			VadEvents:       true,             // Voice activity detection events
+			Language:       lang,       // Language from client
+			Model:          "nova-2",   // Use Nova-2 model
+			Punctuate:      true,       // Add punctuation
+			Encoding:       "linear16", // Linear PCM encoding
+			SampleRate:     16000,      // 16kHz sample rate
+			Channels:       1,          // Mono audio
+			SmartFormat:    true,       // Apply smart formatting
+			InterimResults: true,       // Get intermediate results
+			UtteranceEndMs: "1000",     // End utterance after 1 second of silence
+			VadEvents:      true,       // Voice activity detection events
 		}
-		
+
 		// Create Deepgram callback with string builder for accumulating text
 		callback := &DeepgramCallback{
 			SourceLang:  lang,
@@ -649,12 +665,12 @@ func handleWebSocket(c *gin.Context) {
 			SpeakerConn: conn,
 			sb:          &strings.Builder{},
 		}
-		
+
 		// Client options
 		clientOptions := &clientinterfaces.ClientOptions{
-			EnableKeepAlive: true,  // Keep the connection alive
+			EnableKeepAlive: true, // Keep the connection alive
 		}
-		
+
 		// Initialize Deepgram client
 		deepgramClient, err := client.NewWSUsingCallbackWithCancel(
 			ctx,
@@ -664,13 +680,13 @@ func handleWebSocket(c *gin.Context) {
 			transcriptionOptions,
 			callback,
 		)
-		
+
 		if err != nil {
 			log.Printf("Failed to create Deepgram client: %v", err)
 			conn.Close()
 			return
 		}
-		
+
 		// Connect to Deepgram WebSocket API
 		connected := deepgramClient.Connect()
 		if !connected {
@@ -679,9 +695,9 @@ func handleWebSocket(c *gin.Context) {
 			conn.Close()
 			return
 		}
-		
+
 		log.Printf("Connected to Deepgram WebSocket for speaker %s", speakerID)
-		
+
 		speaker := &Speaker{
 			Conn:              conn,
 			Language:          lang,
@@ -690,28 +706,28 @@ func handleWebSocket(c *gin.Context) {
 			DeepgramCtx:       ctx,
 			DeepgramCancelCtx: cancel,
 		}
-		
+
 		mu.Lock()
 		stream.Speakers[speakerID] = speaker
 		mu.Unlock()
-		
+
 		log.Printf("Added speaker %s", speakerID)
-		
+
 		defer func() {
 			// Close Deepgram connection
 			deepgramClient.Stop()
 			cancel()
-			
+
 			// Close WebSocket connection
 			conn.Close()
-			
+
 			// Remove speaker from stream
 			mu.Lock()
 			delete(stream.Speakers, speakerID)
 			mu.Unlock()
-			
+
 			log.Printf("Speaker %s left", speakerID)
-			
+
 			// Check if stream is still active
 			mu.RLock()
 			if len(stream.Speakers) == 0 && len(stream.Audience) == 0 {
@@ -719,7 +735,7 @@ func handleWebSocket(c *gin.Context) {
 				log.Printf("Stream is now inactive")
 			}
 			mu.RUnlock()
-			
+
 			// Notify others that this speaker left
 			mu.RLock()
 			if len(stream.Audience) > 0 {
@@ -742,7 +758,7 @@ func handleWebSocket(c *gin.Context) {
 			Language:   lang,
 			LastActive: time.Now(),
 			// SpeakerID:  speakerID, // <- Store their selected speaker
-			SpeakerID:  audienceSpeakerID,
+			SpeakerID: audienceSpeakerID,
 		}
 		mu.Lock() // Use write lock to modify the stream
 		stream.Audience[audienceID] = audience
@@ -781,7 +797,7 @@ func handleWebSocket(c *gin.Context) {
 
 			if msgType, ok := data["type"].(string); ok {
 				log.Printf("Received message type: %s", msgType)
-				
+
 				// Handle different message types
 				switch msgType {
 				case "audio":
@@ -797,12 +813,12 @@ func handleWebSocket(c *gin.Context) {
 					mu.RLock()
 					speaker := stream.Speakers[speakerID]
 					mu.RUnlock()
-					
+
 					if speaker == nil {
 						log.Printf("Received audio from unknown speaker: %s", speakerID)
 						continue
 					}
-					
+
 					// Check if audio data is included
 					if audioData, ok := data["data"].(string); ok && audioData != "" {
 						// Process and forward to Deepgram
@@ -825,12 +841,12 @@ func handleWebSocket(c *gin.Context) {
 			mu.RLock()
 			speaker := stream.Speakers[speakerID]
 			mu.RUnlock()
-			
+
 			if speaker == nil {
 				log.Printf("Received binary audio from unknown speaker: %s", speakerID)
 				continue
 			}
-			
+
 			// Send the binary audio data directly to Deepgram
 			if speaker.DeepgramClient != nil {
 				_, err := speaker.DeepgramClient.Write(message)
@@ -910,11 +926,20 @@ func handlePollyTTS(c *gin.Context) {
 
 	log.Printf("Selected voice ID: %s", voiceId)
 
+	// Determine if the language supports neural voices
+	engine := types.EngineStandard
+	if neuralVoiceSupport[req.Language] {
+		engine = types.EngineNeural
+		log.Printf("Using neural engine for language: %s", req.Language)
+	} else {
+		log.Printf("Using standard engine for language: %s (neural not supported)", req.Language)
+	}
+
 	input := &polly.SynthesizeSpeechInput{
 		Text:         aws.String(req.Text),
 		OutputFormat: types.OutputFormatMp3,
 		VoiceId:      voiceId,
-		Engine:       types.EngineNeural,
+		Engine:       engine,
 	}
 
 	log.Printf("Sending request to Polly with input: %+v", input)
