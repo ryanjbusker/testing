@@ -200,25 +200,25 @@
                 }
 
                 const arrayBuffer = await response.arrayBuffer();
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-                if (!audioCtx) {
-                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                }
-
-                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-                const source = audioCtx.createBufferSource();
-                source.buffer = audioBuffer;
+                const decodedData = await audioContext.decodeAudioData(arrayBuffer);
+                const source = audioContext.createBufferSource();
+                source.buffer = decodedData;
                 source.playbackRate.value = 1.25;
-                source.connect(audioCtx.destination);
+                source.connect(audioContext.destination);
 
                 await new Promise((resolve) => {
-                    source.onended = resolve;
-                    source.start();
+                    source.onended = () => {
+                        resolve();
+                    };
+                    source.start(0);
                 });
             } catch (error) {
                 console.error('Error playing speech:', error);
             }
         }
+
 
 
         function connectWebSocket() {
