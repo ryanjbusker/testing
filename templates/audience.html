@@ -87,13 +87,16 @@
         }
 
         let audioCtx = null;
-        // connectButton.addEventListener('click', () => {
-        //     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        //     connectWebSocket();
-        // });
-        connectButton.addEventListener('click', () => {
+        connectButton.addEventListener('click', async () => {
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                // const audioContext = audioCtx;
+            }
+            try {
+                await audioCtx.resume();
+                console.log("Audio context resumed");
+            } catch (err) {
+                console.error("Failed to resume audio context:", err);
             }
             connectWebSocket();
         });
@@ -200,7 +203,8 @@
                 }
 
                 const arrayBuffer = await response.arrayBuffer();
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                // const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const audioContext = audioCtx;
 
                 const decodedData = await audioContext.decodeAudioData(arrayBuffer);
                 const source = audioContext.createBufferSource();
