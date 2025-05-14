@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Multi-Speaker Test</title>
+    <style>
+        .speaker-container {
+            border: 1px solid #ccc;
+            margin: 10px;
+            padding: 10px;
+            width: 300px;
+            float: left;
+            background: #f9f9f9;
+        }
+        .status {
+            color: green;
+            font-weight: bold;
+            padding: 5px;
+            margin: 5px 0;
+            border-radius: 3px;
+        }
+        .disconnected {
+            color: red;
+            background: #ffeeee;
+        }
+        .connected {
+            background: #eeffee;
+        }
+        .messages {
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            margin-top: 10px;
+            padding: 5px;
+            background: white;
+            font-family: monospace;
+        }
+        .controls {
+            clear: both;
+            padding: 20px;
+            background: #f0f0f0;
+            margin-bottom: 20px;
+        }
+        .message {
+            margin: 2px 0;
+            padding: 2px;
+            border-bottom: 1px solid #eee;
+        }
+        .message-time {
+            color: #666;
+            font-size: 0.8em;
+        }
+        .audio-controls {
+            margin-top: 10px;
+            padding: 5px;
+            background: #f0f0f0;
+            border-radius: 3px;
+        }
+        button {
+            margin: 2px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .recording {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .audio-status {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 3px;
+            background: #f0f0f0;
+        }
+        .recording-indicator {
+            display: none;
+            color: red;
+            font-weight: bold;
+        }
+        .recording .recording-indicator {
+            display: inline;
+        }
+        .stream-selector {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f8f8f8;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .stream-list {
+            margin: 10px 0;
+            padding: 10px;
+            background: #fff;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+        .stream-item {
+            padding: 5px;
+            margin: 5px 0;
+            background: #f0f0f0;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .stream-item:hover {
+            background: #e0e0e0;
+        }
+        .stream-item.active {
+            background: #d0d0ff;
+            border-left: 3px solid #0066ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>Multi-Speaker Test</h1>
+    
+    <div class="controls">
+        <button onclick="createNewSpeaker()">Add New Speaker</button>
+        <button onclick="createStream()">Create New Stream</button>
+        <div class="stream-selector">
+            <h3>Available Streams</h3>
+            <div id="streamList" class="stream-list"></div>
+        </div>
+        <div id="streamInfo"></div>
+    </div>
+
+    <div id="speakers"></div>
+
+    <script>
+        let currentStreamId = null;
+        let speakers = [];
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let availableStreams = new Map();
+
+        async function fetchStreams() {
+            try {
+                const response = await fetch('/streams');
+                const streams = await response.json();
+                const streamList = document.getElementById('streamList');
+                streamList.innerHTML = '';
+                
+                streams.forEach(stream => {
+                    availableStreams.set(stream.id, stream);
+                    const streamItem = document.createElement('div');
+                    streamItem.className = 'stream-item';
+                    if (stream.id === currentStreamId) {
+                        streamItem.classList.add('active');
+                    }
+                    streamItem.innerHTML = `
+                        <strong>${stream.name}</strong><br>
+                        ID: ${stream.id}<br>
+                        Speakers: ${stream.speakers}<br>
+                        Audience: ${stream.audience}
+                    `;
+                    streamItem.onclick = () => selectStream(stream.id);
+                    streamList.appendChild(streamItem);
+                });
+            } catch (error) {
+                console.error('Error fetching streams:', error);
+            }
+        }
+
+        function selectStream(streamId) {
+            currentStreamId = streamId;
+            const stream = availableStreams.get(streamId);
+            if (stream) {
+                document.getElementById('streamInfo').innerHTML = 
+                    `<strong>Selected Stream:</strong><br>
+                     ID: ${stream.id}<br>
+                     Name: ${stream.name}<br>
+                     Description: ${stream.description}`;
+                
+                document.querySelectorAll('.stream-item').forEach(item => {
+                    item.classList.remove('active');
+                });
+                document.querySelector(`.stream-item:has(strong:contains('${stream.name}'))`).classList.add('active');
+            }
+        }
+
+        async function createStream() {
+            try {
+                const response = await fetch('/streams', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: 'Test Stream ' + new Date().toLocaleTimeString(),
+                        description: 'Test stream for multiple speakers'
+                    })
+                });
+                const data = await response.json();
+                currentStreamId = data.streamID;
+                await fetchStreams();
+                selectStream(currentStreamId);
+            } catch (error) {
+                console.error('Error creating stream:', error);
+                alert('Error creating stream: ' + error.message);
+            }
+        }
+
+        function createNewSpeaker() {
+            if (!currentStreamId) {
+                alert('Please select a stream first!');
+                return;
+            }
+
+            const speakerId = 'speaker-' + speakers.length;
+            const container = document.createElement('div');
+            container.className = 'speaker-container';
+            container.id = speakerId;
+            
+            container.innerHTML = `
+                <h3>Speaker ${speakers.length + 1}</h3>
+                <div class="status disconnected">Disconnected</div>
+                <div class="audio-status">
+                    <span class="recording-indicator">● RECORDING</span>
+                </div>
+                <div class="messages"></div>
+                <div class="audio-controls">
+                    <button onclick="connectSpeaker('${speakerId}')">Connect</button>
+                    <button onclick="disconnectSpeaker('${speakerId}')">Disconnect</button>
+                    <button onclick="startRecording('${speakerId}')" id="record-${speakerId}">Start Recording</button>
+                    <button onclick="stopRecording('${speakerId}')" id="stop-${speakerId}" disabled>Stop Recording</button>
+                </div>
+            `;
+            
+            document.getElementById('speakers').appendChild(container);
+            speakers.push({
+                id: speakerId,
+                ws: null,
+                container: container,
+                isRecording: false
+            });
+        }
+
+        async function startRecording(speakerId) {
+            const speaker = speakers.find(s => s.id === speakerId);
+            if (!speaker || !speaker.ws) {
+                alert('Please connect the speaker first!');
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                    speaker.ws.send(audioBlob);
+                    addMessage(speakerId, 'Sent audio data');
+                    
+                    // Update UI
+                    speaker.container.querySelector('.audio-status').classList.remove('recording');
+                    document.getElementById(`record-${speakerId}`).disabled = false;
+                    document.getElementById(`stop-${speakerId}`).disabled = true;
+                };
+
+                mediaRecorder.start();
+                speaker.isRecording = true;
+                
+                // Update UI
+                speaker.container.querySelector('.audio-status').classList.add('recording');
+                document.getElementById(`record-${speakerId}`).disabled = true;
+                document.getElementById(`stop-${speakerId}`).disabled = false;
+                addMessage(speakerId, 'Started recording');
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                alert('Error starting recording: ' + error.message);
+            }
+        }
+
+        function stopRecording(speakerId) {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                const speaker = speakers.find(s => s.id === speakerId);
+                if (speaker) {
+                    speaker.isRecording = false;
+                    speaker.container.querySelector('.audio-status').classList.remove('recording');
+                    document.getElementById(`record-${speakerId}`).disabled = false;
+                    document.getElementById(`stop-${speakerId}`).disabled = true;
+                    addMessage(speakerId, 'Stopped recording');
+                }
+            }
+        }
+
+        function connectSpeaker(speakerId) {
+            const speaker = speakers.find(s => s.id === speakerId);
+            if (!speaker) return;
+
+            if (!currentStreamId) {
+                alert('Please select a stream first!');
+                return;
+            }
+
+            const ws = new WebSocket(`ws://localhost:8080/ws?role=speaker&stream=${currentStreamId}&lang=en`);
+            
+            ws.onopen = () => {
+                speaker.container.querySelector('.status').className = 'status connected';
+                speaker.container.querySelector('.status').textContent = 'Connected';
+                addMessage(speakerId, 'Connected to stream');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                addMessage(speakerId, `Received: ${JSON.stringify(data)}`);
+            };
+
+            ws.onclose = (event) => {
+                speaker.container.querySelector('.status').className = 'status disconnected';
+                speaker.container.querySelector('.status').textContent = 'Disconnected';
+                addMessage(speakerId, `Disconnected from stream (Code: ${event.code})`);
+                if (speaker.isRecording) {
+                    stopRecording(speakerId);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                addMessage(speakerId, 'Connection error occurred');
+            };
+
+            speaker.ws = ws;
+        }
+
+        function disconnectSpeaker(speakerId) {
+            const speaker = speakers.find(s => s.id === speakerId);
+            if (speaker) {
+                if (speaker.isRecording) {
+                    stopRecording(speakerId);
+                }
+                if (speaker.ws) {
+                    speaker.ws.close();
+                    speaker.ws = null;
+                }
+            }
+        }
+
+        function addMessage(speakerId, message) {
+            const speaker = speakers.find(s => s.id === speakerId);
+            if (!speaker) return;
+
+            const messagesDiv = speaker.container.querySelector('.messages');
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message';
+            messageElement.innerHTML = `
+                <span class="message-time">${new Date().toLocaleTimeString()}</span>
+                <br>
+                ${message}
+            `;
+            messagesDiv.appendChild(messageElement);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        setInterval(fetchStreams, 5000);
+        fetchStreams();
+    </script>
+</body>
+</html> 

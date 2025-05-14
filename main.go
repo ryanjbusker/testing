@@ -37,6 +37,10 @@ import (
 	clientinterfaces "github.com/deepgram/deepgram-go-sdk/pkg/client/interfaces"
 	client "github.com/deepgram/deepgram-go-sdk/pkg/client/listen"
 	dgclient "github.com/deepgram/deepgram-go-sdk/pkg/client/listen/v1/websocket"
+
+	"database/sql"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var translator *translation.Translator
@@ -60,6 +64,13 @@ type Stream struct {
 	Name        string
 	Description string
 	IsActive    bool
+}
+
+type GoogleUserInfo struct {
+	Sub           string `json:"sub"`            // Google's unique user ID
+	Email         string `json:"email"`          // User's email
+	Name          string `json:"name"`           // User's full name
+	EmailVerified bool   `json:"email_verified"` // Whether email is verified
 }
 
 type Speaker struct {
@@ -377,6 +388,55 @@ func init() {
 	}
 }
 
+// Add this middleware function before main()
+func authMiddleware(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.Printf("Auth middleware: Checking authentication for path: %s", c.Request.URL.Path)
+
+		session, err := store.Get(c.Request, "session-name")
+		if err != nil {
+			log.Printf("Auth middleware: Session error: %v", err)
+			c.Redirect(http.StatusSeeOther, "/login")
+			c.Abort()
+			return
+		}
+
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			log.Printf("Auth middleware: No google_sub in session")
+			c.Redirect(http.StatusSeeOther, "/login")
+			c.Abort()
+			return
+		}
+
+		log.Printf("Auth middleware: Found google_sub: %s", googleSub)
+
+		// Check if user exists in database
+		var exists bool
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = ?)", googleSub).Scan(&exists)
+		if err != nil {
+			log.Printf("Auth middleware: Database error: %v", err)
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"error": "Database error occurred",
+			})
+			c.Abort()
+			return
+		}
+
+		if !exists {
+			log.Printf("Auth middleware: User not found in database")
+			c.HTML(http.StatusForbidden, "error.html", gin.H{
+				"error": "You are not authorized to access this page",
+			})
+			c.Abort()
+			return
+		}
+
+		log.Printf("Auth middleware: Authentication successful")
+		c.Next()
+	}
+}
+
 func main() {
 	router := gin.Default()
 
@@ -406,6 +466,32 @@ func main() {
 		}
 	}
 
+	///////////////////////////
+	db, err := sql.Open("sqlite3", "translation_service.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	createTableSQL := `
+    CREATE TABLE IF NOT EXISTS speakers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        google_id TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT,
+        speaker_code TEXT UNIQUE NOT NULL,
+        created_at DATETIME DEFAULT (datetime('now')),
+        payment_status TEXT,
+        subscription_id TEXT
+    );
+    `
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		log.Fatalf("Failed to create table: %v", err)
+	}
+
+	log.Println("Speakers table created successfully.")
+	///////////////////////////
 	// Serve static files from the static directory
 	router.Static("/static", "./static")
 
@@ -423,15 +509,15 @@ func main() {
 
 	})
 
-	router.GET("/speaker", func(c *gin.Context) {
-		log.Printf("Serving speaker.html")
+	router.GET("/speaker", authMiddleware(db), func(c *gin.Context) {
+		log.Printf("Speaker page accessed")
 		c.HTML(http.StatusOK, "speaker.html", gin.H{
 			"title": "Speaker Page",
 		})
 	})
 
-	router.GET("/speaker/", func(c *gin.Context) {
-		log.Printf("Serving speaker.html (with trailing slash)")
+	router.GET("/speaker/", authMiddleware(db), func(c *gin.Context) {
+		log.Printf("Speaker page accessed (with trailing slash)")
 		c.HTML(http.StatusOK, "speaker.html", gin.H{
 			"title": "Speaker Page",
 		})
@@ -489,6 +575,17 @@ func main() {
 
 	//The folllowing router.GET was added for OAuth
 	router.GET("/login", func(c *gin.Context) {
+		// Get the redirect URL from query parameter
+		redirectTo := c.Query("from")
+		if redirectTo == "" {
+			redirectTo = "/"
+		}
+
+		// Store the redirect URL in the session
+		session, _ := store.Get(c.Request, "session-name")
+		session.Values["redirect_after_login"] = redirectTo
+		session.Save(c.Request, c.Writer)
+
 		url := oauthConfig.AuthCodeURL(oauthStateString)
 		c.Redirect(http.StatusTemporaryRedirect, url)
 	})
@@ -507,29 +604,31 @@ func main() {
 		}
 
 		client := oauthConfig.Client(context.Background(), token)
-		emailResp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+		userInfoResp, err := client.Get("https://www.googleapis.com/oauth2/v3/userinfo")
 		if err != nil {
 			log.Printf("Failed getting user info: %v", err)
 			c.String(http.StatusInternalServerError, "Failed getting user info")
 			return
 		}
-		defer emailResp.Body.Close()
+		defer userInfoResp.Body.Close()
 
-		// Extract email
-		email := extractEmail(emailResp)
-		if email == "" {
-			log.Println("Email not found in user info response")
-			c.String(http.StatusInternalServerError, "Failed to extract email")
+		// Extract user info including Google's sub ID
+		userInfo, err := extractGoogleUserInfo(userInfoResp)
+		if err != nil {
+			log.Printf("Failed to extract user info: %v", err)
+			c.String(http.StatusInternalServerError, "Failed to extract user info")
 			return
 		}
 
-		log.Printf("User logged in with email: %s", email)
+		log.Printf("User logged in - Sub: %s, Email: %s, Name: %s", userInfo.Sub, userInfo.Email, userInfo.Name)
 
-		// Save email to session
+		// Save user info to session
 		session, _ := store.Get(c.Request, "session-name")
-		session.Values["email"] = email
+		session.Values["google_sub"] = userInfo.Sub
+		session.Values["email"] = userInfo.Email
+		session.Values["name"] = userInfo.Name
 
-		// Set session cookie properties (optional but recommended)
+		// Set session cookie properties
 		store.Options = &sessions.Options{
 			Path:     "/",
 			MaxAge:   86400 * 7, // 7 days
@@ -546,19 +645,59 @@ func main() {
 			return
 		}
 
-		// Redirect back to the original page, if present
-		from := c.Query("from")
-		if from == "" {
-			from = "/" // Default to home if nothing specified
+		// Check if user is a speaker
+		var exists bool
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = ?)", userInfo.Sub).Scan(&exists)
+		if err != nil {
+			log.Printf("Database error checking speaker: %v", err)
+			c.String(http.StatusInternalServerError, "Database error occurred")
+			return
 		}
-		log.Printf("Redirecting user to: %s", from)
-		c.Redirect(http.StatusSeeOther, from)
+
+		// Get the redirect URL from session
+		redirectTo, _ := session.Values["redirect_after_login"].(string)
+		if redirectTo == "" {
+			redirectTo = "/"
+		}
+
+		// Clear the redirect URL from session
+		delete(session.Values, "redirect_after_login")
+		session.Save(c.Request, c.Writer)
+
+		// Redirect to the original destination
+		c.Redirect(http.StatusSeeOther, redirectTo)
 	})
 
 	router.GET("/logout", func(c *gin.Context) {
-		session, _ := store.Get(c.Request, "session-name")
-		delete(session.Values, "email")
-		session.Save(c.Request, c.Writer)
+		log.Printf("Logout requested")
+
+		// Get the session
+		session, err := store.Get(c.Request, "session-name")
+		if err != nil {
+			log.Printf("Error getting session during logout: %v", err)
+		}
+
+		// Log session values before clearing
+		log.Printf("Session values before logout: %v", session.Values)
+
+		// Clear all session values
+		for k := range session.Values {
+			delete(session.Values, k)
+		}
+
+		// Set session to expire immediately
+		session.Options.MaxAge = -1
+
+		// Save the cleared session
+		err = session.Save(c.Request, c.Writer)
+		if err != nil {
+			log.Printf("Error saving cleared session: %v", err)
+		}
+
+		// Explicitly clear the session cookie
+		c.SetCookie("session-name", "", -1, "/", "", false, true)
+
+		log.Printf("Logout completed, session cleared")
 		c.Redirect(http.StatusSeeOther, "/")
 	})
 
@@ -577,6 +716,83 @@ func main() {
 
 	// Add Polly TTS endpoint
 	router.POST("/polly-tts", handlePollyTTS)
+
+	// Add a new endpoint to manually insert a user
+	router.POST("/admin/insert-user", func(c *gin.Context) {
+		var user struct {
+			GoogleID string `json:"google_id"`
+			Email    string `json:"email"`
+			Name     string `json:"name"`
+		}
+
+		if err := c.BindJSON(&user); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+			return
+		}
+
+		insertUserSQL := `
+		INSERT INTO speakers (google_id, email, name, speaker_code, created_at, payment_status)
+		VALUES (?, ?, ?, ?, datetime('now'), 'active')
+		ON CONFLICT(google_id) DO UPDATE SET
+			email = excluded.email,
+			name = excluded.name,
+			updated_at = datetime('now')
+		`
+		_, err := db.Exec(insertUserSQL, user.GoogleID, user.Email, user.Name, user.GoogleID)
+		if err != nil {
+			log.Printf("Failed to insert/update user in database: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save user data"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "User inserted successfully"})
+	})
+
+	// Modify the check-speaker endpoint to verify against database
+	router.GET("/check-speaker", func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not logged in"})
+			return
+		}
+
+		// Check if user exists in database
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = ?)", googleSub).Scan(&exists)
+		if err != nil {
+			log.Printf("Database error checking speaker: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error occurred"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"is_speaker": exists,
+			"user_info": gin.H{
+				"sub":   googleSub,
+				"email": session.Values["email"],
+				"name":  session.Values["name"],
+			},
+		})
+	})
+
+	// Add a new endpoint for requesting speaker access
+	router.GET("/request-access", func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.Redirect(http.StatusSeeOther, "/login")
+			return
+		}
+
+		c.HTML(http.StatusOK, "request-access.html", gin.H{
+			"user_info": gin.H{
+				"sub":   googleSub,
+				"email": session.Values["email"],
+				"name":  session.Values["name"],
+			},
+		})
+	})
 
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
@@ -865,15 +1081,13 @@ func translateText(text, sourceLang, targetLang string) (string, error) {
 	return translator.Translate(text, sourceLang, targetLang)
 }
 
-func extractEmail(resp *http.Response) string {
-	var userInfo struct {
-		Email string `json:"email"`
-	}
+func extractGoogleUserInfo(resp *http.Response) (*GoogleUserInfo, error) {
+	var userInfo GoogleUserInfo
 	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
 		log.Printf("Error decoding user info: %v", err)
-		return ""
+		return nil, err
 	}
-	return userInfo.Email
+	return &userInfo, nil
 }
 
 func handlePollyTTS(c *gin.Context) {
