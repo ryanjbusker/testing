@@ -85,6 +85,20 @@
         function updateSubtitleDisplay() {
             translatedTextDiv.textContent = subtitleQueue.map(item => item.text).join(" ");
         }
+
+        let audioCtx = null;
+        // connectButton.addEventListener('click', () => {
+        //     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        //     connectWebSocket();
+        // });
+        connectButton.addEventListener('click', () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            connectWebSocket();
+        });
+
+
         function showSubtitle(text) {
             const wordCount = text.trim().split(/\s+/).length;
             const duration = Math.min(Math.max(wordCount * 500, 2000), 9000);
@@ -166,45 +180,6 @@
             audioQueue = [];
         }
 
-        // async function speakText(text, lang) {
-        //     try {
-        //         console.log('Calling Polly TTS with text:', text, 'language:', lang);
-        //         const response = await fetch('/polly-tts', {
-        //             method: 'POST',
-        //             headers: {
-        //                 'Content-Type': 'application/json',
-        //             },
-        //             body: JSON.stringify({
-        //                 text: text,
-        //                 language: lang,
-        //                 voiceId: getVoiceId(lang)
-        //             })
-        //         });
-
-        //         if (!response.ok) {
-        //             throw new Error('Failed to synthesize speech');
-        //         }
-
-        //         // Create a blob from the audio data
-        //         const audioBlob = await response.blob();
-        //         const audioUrl = URL.createObjectURL(audioBlob);
-
-        //         // Create audio element
-        //         const audio = new Audio(audioUrl);
-        //         audio.onended = () => {
-        //             URL.revokeObjectURL(audioUrl); // Clean up the URL object
-        //         };
-        //         audio.playbackRate = 1.25;
-        //         // Add to queue and process
-        //         audioQueue.push({
-        //             audio,
-        //             resolve: () => {} // Empty resolve function
-        //         });
-        //         processAudioQueue();
-        //     } catch (error) {
-        //         console.error('Error playing speech:', error);
-        //     }
-        // }
         async function speakText(text, lang) {
             try {
                 console.log('Calling Polly TTS with text:', text, 'language:', lang);
@@ -224,24 +199,21 @@
                     throw new Error('Failed to synthesize speech');
                 }
 
-                const audioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = new Audio(audioUrl);
-                audio.playbackRate = 1.25;
+                const arrayBuffer = await response.arrayBuffer();
+
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                const source = audioCtx.createBufferSource();
+                source.buffer = audioBuffer;
+                source.playbackRate.value = 1.25;
+                source.connect(audioCtx.destination);
 
                 await new Promise((resolve) => {
-                    audio.onended = () => {
-                        URL.revokeObjectURL(audioUrl);
-                        resolve();
-                    };
-                    audio.onerror = (e) => {
-                        console.error('Playback error:', e);
-                        resolve(); // Ensure we continue the queue even on failure
-                    };
-                    audio.play().catch((err) => {
-                        console.error('Audio play() failed:', err);
-                        resolve(); // Ensure it doesn't hang the queue
-                    });
+                    source.onended = resolve;
+                    source.start();
                 });
             } catch (error) {
                 console.error('Error playing speech:', error);
