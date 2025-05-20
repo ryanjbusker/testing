@@ -64,7 +64,13 @@ type Stream struct {
 	Name        string
 	Description string
 	IsActive    bool
+	SpeakerCode string
+	mu          sync.RWMutex // Add mutex for thread-safe access
 }
+
+// Add a map to track all active streams
+var activeStreams = make(map[string]*Stream)
+var streamsMu sync.RWMutex // Add mutex for thread-safe access to activeStreams
 
 type GoogleUserInfo struct {
 	Sub           string `json:"sub"`            // Google's unique user ID
@@ -94,7 +100,8 @@ type DeepgramCallback struct {
 	SourceLang  string
 	SpeakerID   string
 	SpeakerConn *websocket.Conn
-	sb          *strings.Builder // String builder to accumulate transcription
+	sb          *strings.Builder
+	Stream      *Stream // Add Stream reference
 }
 
 // Message implements the LiveMessageCallback interface for handling message responses
@@ -224,15 +231,13 @@ func (cb *DeepgramCallback) UnhandledEvent(byData []byte) error {
 
 // Helper method to process translations for all audience members
 func (cb *DeepgramCallback) processTranslations(text string) {
-	mu.RLock()
+	cb.Stream.mu.RLock()
 	// Group audience by target language
 	audienceByLang := make(map[string][]*websocket.Conn)
-	for _, audience := range stream.Audience {
-		if audience.SpeakerID == cb.SpeakerID {
-			audienceByLang[audience.Language] = append(audienceByLang[audience.Language], audience.Conn)
-		}
+	for _, audience := range cb.Stream.Audience {
+		audienceByLang[audience.Language] = append(audienceByLang[audience.Language], audience.Conn)
 	}
-	mu.RUnlock()
+	cb.Stream.mu.RUnlock()
 
 	// Translate once per target language
 	translations := make(map[string]string)
@@ -292,24 +297,6 @@ var (
 	oauthStateString = "random-state-string"
 	store            = sessions.NewCookieStore([]byte(os.Getenv("SESSION_KEY")))
 )
-
-// Map of languages that support neural voices in AWS Polly
-var neuralVoiceSupport = map[string]bool{
-	"en-US": true, // English (US)
-	"en-GB": true, // English (British)
-	"en-AU": true, // English (Australian)
-	"en-NZ": true, // English (New Zealand)
-	"en-IN": true, // English (Indian)
-	"es-ES": true, // Spanish (European)
-	"es-MX": true, // Spanish (Mexican)
-	"fr-FR": true, // French
-	"de-DE": true, // German
-	"it-IT": true, // Italian
-	"pt-BR": true, // Portuguese (Brazilian)
-	"ja-JP": true, // Japanese
-	"ko-KR": true, // Korean
-	"zh-CN": true, // Chinese (Mandarin)
-}
 
 func init() {
 	// Load environment variables first
@@ -570,7 +557,7 @@ func main() {
 	})
 
 	router.GET("/ws", func(c *gin.Context) {
-		handleWebSocket(c)
+		handleWebSocket(c, db)
 	})
 
 	//The folllowing router.GET was added for OAuth
@@ -620,7 +607,11 @@ func main() {
 			return
 		}
 
-		log.Printf("User logged in - Sub: %s, Email: %s, Name: %s", userInfo.Sub, userInfo.Email, userInfo.Name)
+		log.Printf("=== User Login Details ===")
+		log.Printf("Google ID (sub): %s", userInfo.Sub)
+		log.Printf("Email: %s", userInfo.Email)
+		log.Printf("Name: %s", userInfo.Name)
+		log.Printf("========================")
 
 		// Save user info to session
 		session, _ := store.Get(c.Request, "session-name")
@@ -794,6 +785,73 @@ func main() {
 		})
 	})
 
+	router.GET("/audience/:speakerCode", func(c *gin.Context) {
+		speakerCode := c.Param("speakerCode")
+
+		// Check if speaker exists in database
+		var speakerName string
+		err := db.QueryRow("SELECT name FROM speakers WHERE speaker_code = ?", speakerCode).Scan(&speakerName)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.HTML(http.StatusNotFound, "error.html", gin.H{
+					"error": "Speaker not found",
+				})
+				return
+			}
+			log.Printf("Database error: %v", err)
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"error": "Internal server error",
+			})
+			return
+		}
+
+		// Check if stream exists, if not create it
+		streamsMu.Lock()
+		stream, exists := activeStreams[speakerCode]
+		if !exists {
+			stream = &Stream{
+				Name:        speakerName + "'s Stream",
+				Description: "Live translation stream",
+				Speakers:    make(map[string]*Speaker),
+				Audience:    make(map[string]*Audience),
+				IsActive:    true,
+				CreatedAt:   time.Now(),
+				SpeakerCode: speakerCode,
+			}
+			activeStreams[speakerCode] = stream
+		}
+		streamsMu.Unlock()
+
+		c.HTML(http.StatusOK, "audience.html", gin.H{
+			"title":       "Audience Page",
+			"speakerName": speakerName,
+			"speakerCode": speakerCode,
+		})
+	})
+
+	router.GET("/get-speaker-code", authMiddleware(db), func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		var speakerCode string
+		err := db.QueryRow("SELECT speaker_code FROM speakers WHERE google_id = ?", googleSub).Scan(&speakerCode)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Speaker not found"})
+				return
+			}
+			log.Printf("Database error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"speaker_code": speakerCode})
+	})
+
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -807,13 +865,86 @@ func main() {
 	}
 }
 
-func handleWebSocket(c *gin.Context) {
+func handleWebSocket(c *gin.Context, db *sql.DB) {
 	role := c.Query("role")
 	lang := c.Query("lang")
-	// speakerID := c.Query("id") // For speakers
-	// audienceSpeakerID := c.Query("speaker")
+	speakerCode := c.Query("speaker_code")
+	var googleSub string
 
-	log.Printf("WebSocket connection request - Role: %s", role)
+	log.Printf("WebSocket connection request - Role: %s, SpeakerCode: %s", role, speakerCode)
+
+	// Get the appropriate stream
+	var currentStream *Stream
+	if role == "speaker" {
+		// For speakers, we need to verify their speaker code
+		session, _ := store.Get(c.Request, "session-name")
+		var ok bool
+		googleSub, ok = session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		// Verify the speaker code matches the authenticated user
+		var dbSpeakerCode string
+		err := db.QueryRow("SELECT speaker_code FROM speakers WHERE google_id = ?", googleSub).Scan(&dbSpeakerCode)
+		if err != nil {
+			log.Printf("Database error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		if dbSpeakerCode != speakerCode {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid speaker code"})
+			return
+		}
+
+		streamsMu.Lock()
+		stream, exists := activeStreams[speakerCode]
+		if !exists {
+			// Get speaker name for stream
+			var speakerName string
+			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", googleSub).Scan(&speakerName)
+			if err != nil {
+				log.Printf("Database error getting speaker name: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+				streamsMu.Unlock()
+				return
+			}
+
+			stream = &Stream{
+				Name:        speakerName + "'s Stream",
+				Description: "Live translation stream",
+				Speakers:    make(map[string]*Speaker),
+				Audience:    make(map[string]*Audience),
+				IsActive:    true,
+				CreatedAt:   time.Now(),
+				SpeakerCode: speakerCode,
+			}
+			activeStreams[speakerCode] = stream
+		}
+		currentStream = stream
+		streamsMu.Unlock()
+	} else if role == "audience" {
+		// For audience members, we need to find the stream by speaker code
+		if speakerCode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing speaker code"})
+			return
+		}
+
+		streamsMu.RLock()
+		stream, exists := activeStreams[speakerCode]
+		streamsMu.RUnlock()
+
+		if !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Stream not found"})
+			return
+		}
+		currentStream = stream
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid role"})
+		return
+	}
 
 	// Upgrade the HTTP connection to a WebSocket connection
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
@@ -827,8 +958,8 @@ func handleWebSocket(c *gin.Context) {
 	successMsg := map[string]interface{}{
 		"type":       "connected",
 		"role":       role,
-		"streamName": stream.Name,
-		"streamDesc": stream.Description,
+		"streamName": currentStream.Name,
+		"streamDesc": currentStream.Description,
 	}
 	successJSON, _ := json.Marshal(successMsg)
 	if err := conn.WriteMessage(websocket.TextMessage, successJSON); err != nil {
@@ -838,22 +969,14 @@ func handleWebSocket(c *gin.Context) {
 	}
 
 	if role == "speaker" {
-		// speakerID := conn.RemoteAddr().String()
-		speakerID := c.Query("id")
-		if speakerID == "" {
-			log.Printf("Missing speaker ID in query")
-			conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Missing speaker ID"}`))
-			conn.Close()
-			return
-		}
-		mu.RLock()
-		_, exists := stream.Speakers[speakerID]
-		mu.RUnlock()
-
+		speakerID := googleSub // Use Google ID as speaker ID
+		currentStream.mu.Lock()
+		_, exists := currentStream.Speakers[speakerID]
 		if exists {
 			log.Printf("Speaker ID %s is already in use", speakerID)
 			conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Speaker ID already in use"}`))
 			conn.Close()
+			currentStream.mu.Unlock()
 			return
 		}
 
@@ -862,32 +985,30 @@ func handleWebSocket(c *gin.Context) {
 
 		// Set up Deepgram transcription options
 		transcriptionOptions := &clientinterfaces.LiveTranscriptionOptions{
-			Language:       lang,       // Language from client
-			Model:          "nova-2",   // Use Nova-2 model
-			Punctuate:      true,       // Add punctuation
-			Encoding:       "linear16", // Linear PCM encoding
-			SampleRate:     16000,      // 16kHz sample rate
-			Channels:       1,          // Mono audio
-			SmartFormat:    true,       // Apply smart formatting
-			InterimResults: true,       // Get intermediate results
-			UtteranceEndMs: "1000",     // End utterance after 1 second of silence
-			VadEvents:      true,       // Voice activity detection events
+			Language:       lang,
+			Model:          "nova-2",
+			Punctuate:      true,
+			Encoding:       "linear16",
+			SampleRate:     16000,
+			Channels:       1,
+			SmartFormat:    true,
+			InterimResults: true,
+			UtteranceEndMs: "1000",
+			VadEvents:      true,
 		}
 
-		// Create Deepgram callback with string builder for accumulating text
 		callback := &DeepgramCallback{
 			SourceLang:  lang,
 			SpeakerID:   speakerID,
 			SpeakerConn: conn,
 			sb:          &strings.Builder{},
+			Stream:      currentStream, // Pass the stream to the callback
 		}
 
-		// Client options
 		clientOptions := &clientinterfaces.ClientOptions{
-			EnableKeepAlive: true, // Keep the connection alive
+			EnableKeepAlive: true,
 		}
 
-		// Initialize Deepgram client
 		deepgramClient, err := client.NewWSUsingCallbackWithCancel(
 			ctx,
 			cancel,
@@ -900,19 +1021,18 @@ func handleWebSocket(c *gin.Context) {
 		if err != nil {
 			log.Printf("Failed to create Deepgram client: %v", err)
 			conn.Close()
+			currentStream.mu.Unlock()
 			return
 		}
 
-		// Connect to Deepgram WebSocket API
 		connected := deepgramClient.Connect()
 		if !connected {
 			log.Printf("Failed to connect to Deepgram WebSocket API")
 			cancel()
 			conn.Close()
+			currentStream.mu.Unlock()
 			return
 		}
-
-		log.Printf("Connected to Deepgram WebSocket for speaker %s", speakerID)
 
 		speaker := &Speaker{
 			Conn:              conn,
@@ -923,75 +1043,111 @@ func handleWebSocket(c *gin.Context) {
 			DeepgramCancelCtx: cancel,
 		}
 
-		mu.Lock()
-		stream.Speakers[speakerID] = speaker
-		mu.Unlock()
+		currentStream.Speakers[speakerID] = speaker
+		currentStream.mu.Unlock()
 
-		log.Printf("Added speaker %s", speakerID)
+		// Notify all audience members about new speaker
+		currentStream.mu.RLock()
+		for _, audience := range currentStream.Audience {
+			// Get speaker name from database
+			var speakerName string
+			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", speakerID).Scan(&speakerName)
+			if err != nil {
+				log.Printf("Error getting speaker name: %v", err)
+				speakerName = "Unknown Speaker"
+			}
+			speakerJoinedMsg := map[string]interface{}{
+				"type":    "speaker_joined",
+				"speaker": speakerName,
+			}
+			speakerJoinedJSON, _ := json.Marshal(speakerJoinedMsg)
+			audience.Conn.WriteMessage(websocket.TextMessage, speakerJoinedJSON)
+		}
+		currentStream.mu.RUnlock()
 
 		defer func() {
-			// Close Deepgram connection
 			deepgramClient.Stop()
 			cancel()
-
-			// Close WebSocket connection
 			conn.Close()
 
-			// Remove speaker from stream
-			mu.Lock()
-			delete(stream.Speakers, speakerID)
-			mu.Unlock()
-
-			log.Printf("Speaker %s left", speakerID)
-
-			// Check if stream is still active
-			mu.RLock()
-			if len(stream.Speakers) == 0 && len(stream.Audience) == 0 {
-				stream.IsActive = false
-				log.Printf("Stream is now inactive")
+			currentStream.mu.Lock()
+			delete(currentStream.Speakers, speakerID)
+			if len(currentStream.Speakers) == 0 && len(currentStream.Audience) == 0 {
+				streamsMu.Lock()
+				delete(activeStreams, speakerCode)
+				streamsMu.Unlock()
+				log.Printf("Stream %s is now inactive", speakerCode)
 			}
-			mu.RUnlock()
+			currentStream.mu.Unlock()
 
-			// Notify others that this speaker left
-			mu.RLock()
-			if len(stream.Audience) > 0 {
+			// Notify audience members
+			currentStream.mu.RLock()
+			for _, audience := range currentStream.Audience {
+				// Get speaker name from database
+				var speakerName string
+				err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", speakerID).Scan(&speakerName)
+				if err != nil {
+					log.Printf("Error getting speaker name: %v", err)
+					speakerName = "Unknown Speaker"
+				}
 				leaveMsg := map[string]interface{}{
 					"type":    "speaker_left",
-					"speaker": speakerID,
+					"speaker": speakerName,
 				}
 				leaveJSON, _ := json.Marshal(leaveMsg)
-				for _, audience := range stream.Audience {
-					audience.Conn.WriteMessage(websocket.TextMessage, leaveJSON)
-				}
+				audience.Conn.WriteMessage(websocket.TextMessage, leaveJSON)
 			}
-			mu.RUnlock()
+			currentStream.mu.RUnlock()
 		}()
 	} else if role == "audience" {
-		audienceSpeakerID := c.Query("speaker")
 		audienceID := conn.RemoteAddr().String()
 		audience := &Audience{
 			Conn:       conn,
 			Language:   lang,
 			LastActive: time.Now(),
-			// SpeakerID:  speakerID, // <- Store their selected speaker
-			SpeakerID: audienceSpeakerID,
+			SpeakerID:  speakerCode,
 		}
-		mu.Lock() // Use write lock to modify the stream
-		stream.Audience[audienceID] = audience
-		log.Printf("Added audience member %s", audienceID)
-		mu.Unlock()
+
+		currentStream.mu.Lock()
+		currentStream.Audience[audienceID] = audience
+		currentStream.mu.Unlock()
+
+		// Send list of active speakers to new audience member
+		currentStream.mu.RLock()
+		activeSpeakersList := make([]string, 0, len(currentStream.Speakers))
+		for speakerID := range currentStream.Speakers {
+			// Get speaker name from database
+			var speakerName string
+			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", speakerID).Scan(&speakerName)
+			if err != nil {
+				log.Printf("Error getting speaker name: %v", err)
+				speakerName = "Unknown Speaker"
+			}
+			activeSpeakersList = append(activeSpeakersList, speakerName)
+		}
+		currentStream.mu.RUnlock()
+
+		if len(activeSpeakersList) > 0 {
+			speakersMsg := map[string]interface{}{
+				"type":     "active_speakers",
+				"speakers": activeSpeakersList,
+			}
+			speakersJSON, _ := json.Marshal(speakersMsg)
+			conn.WriteMessage(websocket.TextMessage, speakersJSON)
+		}
 
 		defer func() {
-			mu.Lock() // Use write lock to modify the stream
+			currentStream.mu.Lock()
 			conn.Close()
-			delete(stream.Audience, audienceID)
-			log.Printf("Audience member %s left", audienceID)
-			if len(stream.Speakers) == 0 && len(stream.Audience) == 0 {
-				stream.IsActive = false
-				log.Printf("Stream is now inactive")
+			delete(currentStream.Audience, audienceID)
+			if len(currentStream.Speakers) == 0 && len(currentStream.Audience) == 0 {
+				streamsMu.Lock()
+				delete(activeStreams, speakerCode)
+				streamsMu.Unlock()
+				log.Printf("Stream %s is now inactive", speakerCode)
 			}
-			mu.Unlock()
-		}() // Ensure the function call syntax () is present
+			currentStream.mu.Unlock()
+		}()
 	}
 
 	// Handle incoming messages
@@ -1001,7 +1157,7 @@ func handleWebSocket(c *gin.Context) {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				log.Printf("Error reading message: %v", err)
 			}
-			break // Exit loop on error or close
+			break
 		}
 
 		if messageType == websocket.TextMessage {
@@ -1014,60 +1170,42 @@ func handleWebSocket(c *gin.Context) {
 			if msgType, ok := data["type"].(string); ok {
 				log.Printf("Received message type: %s", msgType)
 
-				// Handle different message types
 				switch msgType {
 				case "audio":
-					// For audio data from speaker
-					// speakerID := conn.RemoteAddr().String()
-					speakerID := c.Query("id")
-					if speakerID == "" {
-						log.Printf("Missing speaker ID in query")
-						conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Missing speaker ID"}`))
-						conn.Close()
-						return
-					}
-					mu.RLock()
-					speaker := stream.Speakers[speakerID]
-					mu.RUnlock()
+					if role == "speaker" {
+						speakerID := googleSub
+						currentStream.mu.RLock()
+						speaker := currentStream.Speakers[speakerID]
+						currentStream.mu.RUnlock()
 
-					if speaker == nil {
-						log.Printf("Received audio from unknown speaker: %s", speakerID)
-						continue
-					}
+						if speaker == nil {
+							log.Printf("Received audio from unknown speaker: %s", speakerID)
+							continue
+						}
 
-					// Check if audio data is included
-					if audioData, ok := data["data"].(string); ok && audioData != "" {
-						// Process and forward to Deepgram
-						// Note: Client will send base64 encoded audio which needs to be decoded
-						// This will be handled in the client-side code
-						log.Printf("Received audio data of length %d from speaker %s", len(audioData), speakerID)
+						if audioData, ok := data["data"].(string); ok && audioData != "" {
+							log.Printf("Received audio data of length %d from speaker %s", len(audioData), speakerID)
+						}
 					}
 				}
 			}
 		} else if messageType == websocket.BinaryMessage {
-			// This is a binary audio message
-			// speakerID := conn.RemoteAddr().String()
-			speakerID := c.Query("id")
-			if speakerID == "" {
-				log.Printf("Missing speaker ID in query")
-				conn.WriteMessage(websocket.TextMessage, []byte(`{"error": "Missing speaker ID"}`))
-				conn.Close()
-				return
-			}
-			mu.RLock()
-			speaker := stream.Speakers[speakerID]
-			mu.RUnlock()
+			if role == "speaker" {
+				speakerID := googleSub
+				currentStream.mu.RLock()
+				speaker := currentStream.Speakers[speakerID]
+				currentStream.mu.RUnlock()
 
-			if speaker == nil {
-				log.Printf("Received binary audio from unknown speaker: %s", speakerID)
-				continue
-			}
+				if speaker == nil {
+					log.Printf("Received binary audio from unknown speaker: %s", speakerID)
+					continue
+				}
 
-			// Send the binary audio data directly to Deepgram
-			if speaker.DeepgramClient != nil {
-				_, err := speaker.DeepgramClient.Write(message)
-				if err != nil {
-					log.Printf("Error sending audio to Deepgram: %v", err)
+				if speaker.DeepgramClient != nil {
+					_, err := speaker.DeepgramClient.Write(message)
+					if err != nil {
+						log.Printf("Error sending audio to Deepgram: %v", err)
+					}
 				}
 			}
 		}
@@ -1090,6 +1228,24 @@ func extractGoogleUserInfo(resp *http.Response) (*GoogleUserInfo, error) {
 	return &userInfo, nil
 }
 
+// Map of languages that support neural voices in AWS Polly
+var neuralVoiceSupport = map[string]bool{
+	"en-US": true, // English (US)
+	"en-GB": true, // English (British)
+	"en-AU": true, // English (Australian)
+	"en-NZ": true, // English (New Zealand)
+	"en-IN": true, // English (Indian)
+	"es-ES": true, // Spanish (European)
+	"es-MX": true, // Spanish (Mexican)
+	"fr-FR": true, // French
+	"de-DE": true, // German
+	"it-IT": true, // Italian
+	"pt-BR": true, // Portuguese (Brazilian)
+	"ja-JP": true, // Japanese
+	"ko-KR": true, // Korean
+	"zh-CN": true, // Chinese (Mandarin)
+}
+
 func handlePollyTTS(c *gin.Context) {
 	log.Println("=== POLLY TTS ENDPOINT CALLED ===")
 
@@ -1107,14 +1263,24 @@ func handlePollyTTS(c *gin.Context) {
 	// Log the incoming request
 	log.Printf("Polly TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
 
-	voiceId := types.VoiceId("Joanna")
+	voiceId := types.VoiceId("Matthew")
 	if req.VoiceId != "" {
 		voiceId = types.VoiceId(req.VoiceId)
 	} else {
 		// Otherwise, select voice based on language
 		switch req.Language {
+		case "en-US":
+			voiceId = types.VoiceId("Matthew")
+		case "en-GB":
+			voiceId = types.VoiceId("Brian")
+		case "en-AU":
+			voiceId = types.VoiceId("Olivia")
+		case "en-IN":
+			voiceId = types.VoiceId("Kajal")
 		case "es-ES":
-			voiceId = types.VoiceId("Lucia")
+			voiceId = types.VoiceId("Sergio")
+		case "es-MX":
+			voiceId = types.VoiceId("Mia")
 		case "fr-FR":
 			voiceId = types.VoiceId("Celine")
 		case "de-DE":
@@ -1123,12 +1289,6 @@ func handlePollyTTS(c *gin.Context) {
 			voiceId = types.VoiceId("Carla")
 		case "pt-BR":
 			voiceId = types.VoiceId("Camila")
-		case "nl-NL":
-			voiceId = types.VoiceId("Laura")
-		case "pl-PL":
-			voiceId = types.VoiceId("Ola")
-		case "ru-RU":
-			voiceId = types.VoiceId("Tatyana")
 		case "ja-JP":
 			voiceId = types.VoiceId("Takumi")
 		case "ko-KR":

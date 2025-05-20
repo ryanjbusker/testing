@@ -29,14 +29,6 @@
         
         <div class="content-box">
             <div class="form-group">
-                <label for="speakerId">Select Speaker ID</label>
-                <select id="speakerId" class="form-control">
-                    <option value="speaker1">Speaker 1</option>
-                    <option value="speaker2">Speaker 2</option>
-                    <option value="speaker3">Speaker 3</option>
-                </select>
-            </div>            
-            <div class="form-group">
                 <label for="sourceLanguage">Your Language</label>
                 <select id="sourceLanguage" class="form-control">
                     <option value="en">English</option>
@@ -87,7 +79,6 @@
         let processor = null;
         let isRecording = false;
         let mediaStream = null;
-        let currentSpeakerId = null;
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
         const statusDiv = document.getElementById('status');
@@ -98,93 +89,51 @@
         const SAMPLE_RATE = 16000; // 16kHz sample rate for best compatibility with Deepgram
         const BUFFER_SIZE = 4096;  // Buffer size for audio processing
 
-        // function connectWebSocket() {
-        //     if (ws) {
-        //         ws.close();
-        //     }
+        // Function to get speaker code from server
+        async function getSpeakerCode() {
+            try {
+                console.log('Fetching speaker code...');
+                const response = await fetch('/get-speaker-code');
+                console.log('Speaker code response:', response);
+                const data = await response.json();
+                console.log('Speaker code data:', data);
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                return data.speaker_code;
+            } catch (error) {
+                console.error('Error getting speaker code:', error);
+                statusDiv.textContent = 'Error: ' + error.message;
+                return null;
+            }
+        }
 
-        //     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        //     const protocol = isLocalhost ? 'ws:' : 'wss:';
-        //     const speakerId = document.getElementById("speakerId").value.trim();
-        //     const wsUrl = `${protocol}//${window.location.host}/ws?role=speaker&lang=${sourceLanguage.value}&id=${encodeURIComponent(speakerId)}`;
-        //     console.log('Connecting to WebSocket:', wsUrl);
-            
-        //     try {
-        //         ws = new WebSocket(wsUrl);
-
-        //         ws.onopen = () => {
-        //             console.log('WebSocket connection opened');
-        //             statusDiv.textContent = 'Connecting...';
-        //             startButton.disabled = false;
-        //         };
-
-        //         ws.onmessage = (event) => {
-        //             const data = JSON.parse(event.data);
-        //             console.log('Received message:', data);
-
-        //             if (data.error) {
-        //                 console.error('Server error:', data.error);
-        //                 statusDiv.textContent = 'Error: ' + data.error;
-        //                 resetUI();
-        //                 return;
-        //             }
-
-        //             if (data.type === 'connected') {
-        //                 console.log('Successfully connected to stream');
-        //                 statusDiv.textContent = 'Connected';
-        //                 startButton.disabled = false;
-        //             } else if (data.type === 'transcription') {
-        //                 // Display the final transcribed text from Deepgram
-        //                 recognizedTextDiv.textContent = data.text;
-                        
-        //                 // Show final status
-        //                 if (data.final) {
-        //                     statusDiv.textContent = 'Speech completed. Ready for more.';
-        //                 }
-        //             } else if (data.type === 'interim') {
-        //                 // Display interim results with visual indicator
-        //                 recognizedTextDiv.textContent = data.text + "...";
-        //             }
-        //         };
-
-        //         ws.onclose = (event) => {
-        //             console.log('WebSocket connection closed:', event);
-        //             statusDiv.textContent = 'Disconnected';
-        //             resetUI();
-        //         };
-
-        //         ws.onerror = (error) => {
-        //             console.error('WebSocket error:', error);
-        //             statusDiv.textContent = 'Error: Connection failed';
-        //             resetUI();
-        //         };
-        //     } catch (error) {
-        //         console.error('Error creating WebSocket:', error);
-        //         statusDiv.textContent = 'Error: Failed to create connection';
-        //         resetUI();
-        //     }
-        // }
-        function connectWebSocket() {
+        async function connectWebSocket() {
             if (ws) {
+                console.log('Closing existing WebSocket connection...');
                 ws.close();
             }
 
-            const speakerId = document.getElementById("speakerId").value.trim();
+            console.log('Getting speaker code...');
+            const speakerCode = await getSpeakerCode();
+            if (!speakerCode) {
+                console.error('Failed to get speaker code');
+                return;
+            }
+            console.log('Got speaker code:', speakerCode);
+
             const lang = sourceLanguage.value;
-            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            const protocol = isLocalhost ? 'ws:' : 'wss:';
-            const wsUrl = `${protocol}//${window.location.host}/ws?role=speaker&lang=${lang}&id=${encodeURIComponent(speakerId)}`;
+            console.log('Selected language:', lang);
+            
+            // Determine if we're in production based on the protocol
+            const isSecure = window.location.protocol === 'https:';
+            const wsProtocol = isSecure ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws?role=speaker&lang=${lang}&speaker_code=${encodeURIComponent(speakerCode)}`;
 
             console.log('Connecting to WebSocket:', wsUrl);
-            currentSpeakerId = speakerId;
 
             ws = new WebSocket(wsUrl);
 
-            // ws.onopen = () => {
-            //     console.log('WebSocket connection opened');
-            //     statusDiv.textContent = 'Connected';
-            //     startButton.disabled = false;
-            // };
             ws.onopen = () => {
                 console.log('WebSocket connection opened');
                 statusDiv.textContent = 'Connected';
@@ -220,7 +169,8 @@
                 }
             };
 
-            ws.onclose = () => {
+            ws.onclose = (event) => {
+                console.log('WebSocket closed:', event.code, event.reason);
                 statusDiv.textContent = 'Disconnected';
                 resetUI();
             };
@@ -232,11 +182,8 @@
             };
         }
 
-
-        document.getElementById("speakerId").addEventListener("change", () => {
-            // startButton.disabled = true;
-            // if (isRecording) stopRecording();
-            // connectWebSocket();
+        // Connect WebSocket when language changes
+        sourceLanguage.addEventListener("change", () => {
             if (isRecording) {
                 stopRecording();  // stops + closes audio context
                 setTimeout(() => {
@@ -246,6 +193,9 @@
                 connectWebSocket();
             }
         });
+
+        // Initial connection
+        connectWebSocket();
 
         function resetUI() {
             stopRecording();
@@ -257,10 +207,6 @@
         
         // Start recording and streaming audio
         async function startRecording() {
-            // connectWebSocket();
-            // if (!ws || ws.readyState !== WebSocket.OPEN) {
-            //     connectWebSocket();
-            // }
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 statusDiv.textContent = 'WebSocket not ready';
                 return;
@@ -271,20 +217,6 @@
                     audioContext = new (window.AudioContext || window.webkitAudioContext)({
                         sampleRate: SAMPLE_RATE
                     });
-                    
-                    // Get microphone stream
-                    // const stream = await navigator.mediaDevices.getUserMedia({
-                    //     audio: {
-                    //         channelCount: 1,           // Mono audio
-                    //         echoCancellation: true,    // Enable echo cancellation
-                    //         noiseSuppression: true,    // Enable noise suppression
-                    //         autoGainControl: true      // Enable auto gain control
-                    //     }
-                    // });
-                    
-                    // Create microphone source
-                    // microphone = audioContext.createMediaStreamSource(stream);
-                    // microphone = audioContext.createMediaStreamSource(mediaStream);
 
                     mediaStream = await navigator.mediaDevices.getUserMedia({
                         audio: {
@@ -320,20 +252,17 @@
                     // Connect nodes
                     microphone.connect(processor);
                     processor.connect(audioContext.destination);
-
                 }
                 
                 isRecording = true;
                 startButton.disabled = true;
                 stopButton.disabled = false;
                 statusDiv.textContent = 'Speaking...';
-
-                document.getElementById("speakerId").disabled = true;
                 sourceLanguage.disabled = true;
                 
             } catch (error) {
                 console.error('Error starting recording:', error);
-                statusDiv.textContent = 'Error: Failed to access microphone';
+                statusDiv.textContent = 'Error: Failed to access microphone';  
             }
         }
 
@@ -352,11 +281,7 @@
                 startButton.disabled = false;
                 stopButton.disabled = true;
                 statusDiv.textContent = 'Stopped';
-
-                document.getElementById("speakerId").disabled = false;
                 sourceLanguage.disabled = false;
-
-
 
                 if (mediaStream) {
                     mediaStream.getTracks().forEach(track => track.stop());
@@ -370,7 +295,6 @@
                         processor = null;
                     });
                 }
-
             }
         }
 
@@ -387,16 +311,6 @@
 
         startButton.addEventListener('click', startRecording);
         stopButton.addEventListener('click', stopRecording);
-        sourceLanguage.addEventListener('change', () => {
-            // Reset and reconnect WebSocket when language changes
-            if (isRecording) {
-                stopRecording();
-            }
-            connectWebSocket();
-        });
-
-        // Connect to WebSocket when page loads
-        connectWebSocket();
 
         // Clean up on page unload
         window.onbeforeunload = function() {
