@@ -148,29 +148,62 @@
         }
 
         // Function to process the audio queue
+        // async function processAudioQueue() {
+        //     if (isPlaying || audioQueue.length === 0) return;
+            
+        //     isPlaying = true;
+        //     const { audio, resolve } = audioQueue.shift();
+        //     currentAudio = audio;
+            
+        //     try {
+        //         await audio.play();
+        //         audio.onended = () => {
+        //             isPlaying = false;
+        //             currentAudio = null;
+        //             resolve();
+        //             processAudioQueue(); // Process next item in queue
+        //         };
+        //     } catch (error) {
+        //         console.error('Error playing audio:', error);
+        //         isPlaying = false;
+        //         currentAudio = null;
+        //         resolve();
+        //         processAudioQueue(); // Continue with next item even if there's an error
+        //     }
+        // }
         async function processAudioQueue() {
             if (isPlaying || audioQueue.length === 0) return;
-            
+
             isPlaying = true;
-            const { audio, resolve } = audioQueue.shift();
-            currentAudio = audio;
-            
-            try {
-                await audio.play();
-                audio.onended = () => {
-                    isPlaying = false;
-                    currentAudio = null;
-                    resolve();
-                    processAudioQueue(); // Process next item in queue
-                };
-            } catch (error) {
-                console.error('Error playing audio:', error);
+            const { buffer, resolve } = audioQueue.shift();
+
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.playbackRate.value = 1.25;
+            source.connect(audioCtx.destination);
+
+            source.onended = () => {
                 isPlaying = false;
-                currentAudio = null;
                 resolve();
-                processAudioQueue(); // Continue with next item even if there's an error
+                processAudioQueue(); // Play next one in queue
+            };
+
+            try {
+                source.start(0);
+            } catch (error) {
+                console.error('Playback error:', error);
+                isPlaying = false;
+                resolve();
+                processAudioQueue();
             }
         }
+
+
+
+
+
+
+
 
         // Function to stop current audio and clear queue
         function stopAudio() {
@@ -183,14 +216,50 @@
             audioQueue = [];
         }
 
+        // async function speakText(text, lang) {
+        //     try {
+        //         console.log('Calling Polly TTS with text:', text, 'language:', lang);
+        //         const response = await fetch('/polly-tts', {
+        //             method: 'POST',
+        //             headers: {
+        //                 'Content-Type': 'application/json',
+        //             },
+        //             body: JSON.stringify({
+        //                 text: text,
+        //                 language: lang,
+        //                 voiceId: getVoiceId(lang)
+        //             })
+        //         });
+
+        //         if (!response.ok) {
+        //             throw new Error('Failed to synthesize speech');
+        //         }
+
+        //         const arrayBuffer = await response.arrayBuffer();
+        //         // const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        //         const audioContext = audioCtx;
+
+        //         const decodedData = await audioContext.decodeAudioData(arrayBuffer);
+        //         const source = audioContext.createBufferSource();
+        //         source.buffer = decodedData;
+        //         source.playbackRate.value = 1.25;
+        //         source.connect(audioContext.destination);
+
+        //         await new Promise((resolve) => {
+        //             source.onended = () => {
+        //                 resolve();
+        //             };
+        //             source.start(0);
+        //         });
+        //     } catch (error) {
+        //         console.error('Error playing speech:', error);
+        //     }
+        // }
         async function speakText(text, lang) {
             try {
-                console.log('Calling Polly TTS with text:', text, 'language:', lang);
                 const response = await fetch('/polly-tts', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         text: text,
                         language: lang,
@@ -203,25 +272,20 @@
                 }
 
                 const arrayBuffer = await response.arrayBuffer();
-                // const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const audioContext = audioCtx;
+                const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
 
-                const decodedData = await audioContext.decodeAudioData(arrayBuffer);
-                const source = audioContext.createBufferSource();
-                source.buffer = decodedData;
-                source.playbackRate.value = 1.25;
-                source.connect(audioContext.destination);
-
-                await new Promise((resolve) => {
-                    source.onended = () => {
-                        resolve();
-                    };
-                    source.start(0);
+                // Push to queue instead of playing immediately
+                audioQueue.push({
+                    buffer: decodedData,
+                    resolve: () => {}
                 });
+
+                processAudioQueue();
             } catch (error) {
-                console.error('Error playing speech:', error);
+                console.error('Error queuing speech:', error);
             }
         }
+
 
 
 
