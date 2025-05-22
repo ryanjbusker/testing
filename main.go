@@ -484,7 +484,7 @@ func main() {
 	log.Printf("Loaded templates from %s", templatesDir)
 
 	// Routes
-	router.GET("/", authMiddleware(db), func(c *gin.Context) {
+	router.GET("/", func(c *gin.Context) {
 		log.Printf("Serving index.html")
 		c.HTML(http.StatusOK, "index.html", gin.H{
 			"title": "Translation Service",
@@ -505,28 +505,28 @@ func main() {
 		})
 	})
 
-	router.GET("/audience", authMiddleware(db), func(c *gin.Context) {
+	router.GET("/audience", func(c *gin.Context) {
 		log.Printf("Serving audience.html")
 		c.HTML(http.StatusOK, "audience.html", gin.H{
 			"title": "Audience Page",
 		})
 	})
 
-	router.GET("/audience/", authMiddleware(db), func(c *gin.Context) {
+	router.GET("/audience/", func(c *gin.Context) {
 		log.Printf("Serving audience.html (with trailing slash)")
 		c.HTML(http.StatusOK, "audience.html", gin.H{
 			"title": "Audience Page",
 		})
 	})
 
-	router.GET("/contact", authMiddleware(db), func(c *gin.Context) {
+	router.GET("/contact", func(c *gin.Context) {
 		log.Printf("Serving contact.html")
 		c.HTML(http.StatusOK, "contact.html", gin.H{
 			"title": "Contact Us",
 		})
 	})
 
-	router.GET("/streams", authMiddleware(db), func(c *gin.Context) {
+	router.GET("/streams", func(c *gin.Context) {
 		mu.RLock()
 		activeStreams := make([]map[string]interface{}, 0)
 		activeStreams = append(activeStreams, map[string]interface{}{
