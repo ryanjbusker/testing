@@ -40,7 +40,7 @@ import (
 
 	"database/sql"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
 var translator *translation.Translator
@@ -397,7 +397,7 @@ func authMiddleware(db *sql.DB) gin.HandlerFunc {
 
 		// Check if user exists in database
 		var exists bool
-		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = ?)", googleSub).Scan(&exists)
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = $1)", googleSub).Scan(&exists)
 		if err != nil {
 			log.Printf("Auth middleware: Database error: %v", err)
 			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
@@ -450,20 +450,28 @@ func main() {
 		}
 	}
 	///////////////////////////
-	db, err := sql.Open("sqlite3", "translation_service.db")
+	// Connect to PostgreSQL database
+	db, err := sql.Open("postgres", "postgresql://speakers_user:ci4Y6jkzuf1IZO6Ukc7aLNttFo61RRkb@dpg-d0ocl0qdbo4c73fg3ms0-a.ohio-postgres.render.com/speakers")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
+	// Test the connection
+	err = db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("Successfully connected to PostgreSQL database")
+
 	createTableSQL := `
     CREATE TABLE IF NOT EXISTS speakers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         google_id TEXT UNIQUE NOT NULL,
         email TEXT UNIQUE NOT NULL,
         name TEXT,
         speaker_code TEXT UNIQUE NOT NULL,
-        created_at DATETIME DEFAULT (datetime('now')),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         payment_status TEXT,
         subscription_id TEXT
     );
@@ -634,7 +642,7 @@ func main() {
 
 		// Check if user is a speaker
 		var exists bool
-		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = ?)", userInfo.Sub).Scan(&exists)
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = $1)", userInfo.Sub).Scan(&exists)
 		if err != nil {
 			log.Printf("Database error checking speaker: %v", err)
 			c.String(http.StatusInternalServerError, "Database error occurred")
@@ -717,11 +725,11 @@ func main() {
 
 		insertUserSQL := `
 		INSERT INTO speakers (google_id, email, name, speaker_code, created_at, payment_status)
-		VALUES (?, ?, ?, ?, datetime('now'), 'active')
+		VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 'active')
 		ON CONFLICT(google_id) DO UPDATE SET
-			email = excluded.email,
-			name = excluded.name,
-			updated_at = datetime('now')
+			email = EXCLUDED.email,
+			name = EXCLUDED.name,
+			updated_at = CURRENT_TIMESTAMP
 		`
 		_, err := db.Exec(insertUserSQL, user.GoogleID, user.Email, user.Name, user.GoogleID)
 		if err != nil {
@@ -744,7 +752,7 @@ func main() {
 
 		// Check if user exists in database
 		var exists bool
-		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = ?)", googleSub).Scan(&exists)
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = $1)", googleSub).Scan(&exists)
 		if err != nil {
 			log.Printf("Database error checking speaker: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error occurred"})
@@ -784,7 +792,7 @@ func main() {
 
 		// Check if speaker exists in database
 		var speakerName string
-		err := db.QueryRow("SELECT name FROM speakers WHERE speaker_code = ?", speakerCode).Scan(&speakerName)
+		err := db.QueryRow("SELECT name FROM speakers WHERE speaker_code = $1", speakerCode).Scan(&speakerName)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				c.HTML(http.StatusNotFound, "error.html", gin.H{
@@ -832,7 +840,7 @@ func main() {
 		}
 
 		var speakerCode string
-		err := db.QueryRow("SELECT speaker_code FROM speakers WHERE google_id = ?", googleSub).Scan(&speakerCode)
+		err := db.QueryRow("SELECT speaker_code FROM speakers WHERE google_id = $1", googleSub).Scan(&speakerCode)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Speaker not found"})
@@ -882,7 +890,7 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 
 		// Verify the speaker code matches the authenticated user
 		var dbSpeakerCode string
-		err := db.QueryRow("SELECT speaker_code FROM speakers WHERE google_id = ?", googleSub).Scan(&dbSpeakerCode)
+		err := db.QueryRow("SELECT speaker_code FROM speakers WHERE google_id = $1", googleSub).Scan(&dbSpeakerCode)
 		if err != nil {
 			log.Printf("Database error: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
@@ -899,7 +907,7 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 		if !exists {
 			// Get speaker name for stream
 			var speakerName string
-			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", googleSub).Scan(&speakerName)
+			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = $1", googleSub).Scan(&speakerName)
 			if err != nil {
 				log.Printf("Database error getting speaker name: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
@@ -1046,7 +1054,7 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 		for _, audience := range currentStream.Audience {
 			// Get speaker name from database
 			var speakerName string
-			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", speakerID).Scan(&speakerName)
+			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = $1", speakerID).Scan(&speakerName)
 			if err != nil {
 				log.Printf("Error getting speaker name: %v", err)
 				speakerName = "Unknown Speaker"
@@ -1080,7 +1088,7 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 			for _, audience := range currentStream.Audience {
 				// Get speaker name from database
 				var speakerName string
-				err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", speakerID).Scan(&speakerName)
+				err := db.QueryRow("SELECT name FROM speakers WHERE google_id = $1", speakerID).Scan(&speakerName)
 				if err != nil {
 					log.Printf("Error getting speaker name: %v", err)
 					speakerName = "Unknown Speaker"
@@ -1113,7 +1121,7 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 		for speakerID := range currentStream.Speakers {
 			// Get speaker name from database
 			var speakerName string
-			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = ?", speakerID).Scan(&speakerName)
+			err := db.QueryRow("SELECT name FROM speakers WHERE google_id = $1", speakerID).Scan(&speakerName)
 			if err != nil {
 				log.Printf("Error getting speaker name: %v", err)
 				speakerName = "Unknown Speaker"
