@@ -80,23 +80,10 @@
 
         let audioCtx = null;
         connectButton.addEventListener('click', async () => {
+            // Initialize audio context on user interaction
             if (!audioCtx) {
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext({
-                    latencyHint: 'interactive',
-                    sampleRate: 44100
-                });
-
-                // Unlock audio on iOS with silent oscillator
-                const unlockOsc = audioCtx.createOscillator();
-                const unlockGain = audioCtx.createGain();
-                unlockGain.gain.value = 0;
-                unlockOsc.connect(unlockGain);
-                unlockGain.connect(audioCtx.destination);
-                unlockOsc.start();
-                unlockOsc.stop(audioCtx.currentTime + 0.05);
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             }
-
             try {
                 await audioCtx.resume();
                 console.log("Audio context resumed");
@@ -104,7 +91,6 @@
             } catch (err) {
                 console.error("Failed to resume audio context:", err);
             }
-
             connectWebSocket();
         });
 
