@@ -451,7 +451,11 @@ func main() {
 	}
 	///////////////////////////
 	// Connect to PostgreSQL database
-	db, err := sql.Open("postgres", "postgresql://speakers_user:ci4Y6jkzuf1IZO6Ukc7aLNttFo61RRkb@dpg-d0ocl0qdbo4c73fg3ms0-a.ohio-postgres.render.com/speakers")
+	dbConnStr := os.Getenv("DATABASE_URL")
+	if dbConnStr == "" {
+		log.Fatal("DATABASE_URL environment variable is not set")
+	}
+	db, err := sql.Open("postgres", dbConnStr)
 	if err != nil {
 		log.Fatal(err)
 	}
