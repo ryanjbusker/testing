@@ -70,7 +70,7 @@
         let audioQueue = [];
         let isPlaying = false;
         let currentAudio = null;
-
+        let isAudioEnabled = false;
 
         let subtitleTimer = null;
         const subtitleQueue = [];
@@ -80,19 +80,38 @@
 
         let audioCtx = null;
         connectButton.addEventListener('click', async () => {
+            // Initialize audio context on user interaction
             if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                // const audioContext = audioCtx;
+                // Create audio context with specific options for mobile
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext({
+                    latencyHint: 'interactive',
+                    sampleRate: 44100
+                });
+                
+                // Set audio context to play even in silent mode
+                if (audioCtx.setSinkId) {
+                    try {
+                        // Get the default audio output device
+                        const devices = await navigator.mediaDevices.enumerateDevices();
+                        const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
+                        if (audioOutputs.length > 0) {
+                            await audioCtx.setSinkId(audioOutputs[0].deviceId);
+                        }
+                    } catch (err) {
+                        console.warn('Could not set audio output device:', err);
+                    }
+                }
             }
             try {
                 await audioCtx.resume();
                 console.log("Audio context resumed");
+                isAudioEnabled = true;
             } catch (err) {
                 console.error("Failed to resume audio context:", err);
             }
             connectWebSocket();
         });
-
 
         function showSubtitle(text) {
             const wordCount = text.trim().split(/\s+/).length;
@@ -142,40 +161,19 @@
             return voices[lang] || 'Matthew'; // Fallback to English
         }
 
-        // Function to process the audio queue
-        // async function processAudioQueue() {
-        //     if (isPlaying || audioQueue.length === 0) return;
-            
-        //     isPlaying = true;
-        //     const { audio, resolve } = audioQueue.shift();
-        //     currentAudio = audio;
-            
-        //     try {
-        //         await audio.play();
-        //         audio.onended = () => {
-        //             isPlaying = false;
-        //             currentAudio = null;
-        //             resolve();
-        //             processAudioQueue(); // Process next item in queue
-        //         };
-        //     } catch (error) {
-        //         console.error('Error playing audio:', error);
-        //         isPlaying = false;
-        //         currentAudio = null;
-        //         resolve();
-        //         processAudioQueue(); // Continue with next item even if there's an error
-        //     }
-        // }
         async function processAudioQueue() {
             if (isPlaying || audioQueue.length === 0) return;
 
             isPlaying = true;
-            const { buffer, resolve } = audioQueue.shift();
+            const { buffer, resolve, gainNode } = audioQueue.shift();
 
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.playbackRate.value = 1.25;
-            source.connect(audioCtx.destination);
+            
+            // Connect through gain node
+            source.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
 
             source.onended = () => {
                 isPlaying = false;
@@ -193,13 +191,6 @@
             }
         }
 
-
-
-
-
-
-
-
         // Function to stop current audio and clear queue
         function stopAudio() {
             if (currentAudio) {
@@ -211,45 +202,6 @@
             audioQueue = [];
         }
 
-        // async function speakText(text, lang) {
-        //     try {
-        //         console.log('Calling Polly TTS with text:', text, 'language:', lang);
-        //         const response = await fetch('/polly-tts', {
-        //             method: 'POST',
-        //             headers: {
-        //                 'Content-Type': 'application/json',
-        //             },
-        //             body: JSON.stringify({
-        //                 text: text,
-        //                 language: lang,
-        //                 voiceId: getVoiceId(lang)
-        //             })
-        //         });
-
-        //         if (!response.ok) {
-        //             throw new Error('Failed to synthesize speech');
-        //         }
-
-        //         const arrayBuffer = await response.arrayBuffer();
-        //         // const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        //         const audioContext = audioCtx;
-
-        //         const decodedData = await audioContext.decodeAudioData(arrayBuffer);
-        //         const source = audioContext.createBufferSource();
-        //         source.buffer = decodedData;
-        //         source.playbackRate.value = 1.25;
-        //         source.connect(audioContext.destination);
-
-        //         await new Promise((resolve) => {
-        //             source.onended = () => {
-        //                 resolve();
-        //             };
-        //             source.start(0);
-        //         });
-        //     } catch (error) {
-        //         console.error('Error playing speech:', error);
-        //     }
-        // }
         async function speakText(text, lang) {
             try {
                 const response = await fetch('/polly-tts', {
@@ -269,10 +221,15 @@
                 const arrayBuffer = await response.arrayBuffer();
                 const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
 
-                // Push to queue instead of playing immediately
+                // Create a gain node to control volume
+                const gainNode = audioCtx.createGain();
+                gainNode.gain.value = 1.0; // Full volume
+
+                // Push to queue with gain node
                 audioQueue.push({
                     buffer: decodedData,
-                    resolve: () => {}
+                    resolve: () => {},
+                    gainNode: gainNode
                 });
 
                 processAudioQueue();
@@ -280,9 +237,6 @@
                 console.error('Error queuing speech:', error);
             }
         }
-
-
-
 
         function connectWebSocket() {
             if (ws) {
@@ -339,7 +293,6 @@
                 if (data.type === 'connected') {
                     console.log('Connected to stream:', data.streamName);
                     console.log('Stream description:', data.streamDesc);
-                    // Extract speaker name from stream name (removes "'s Stream" suffix)
                     const speakerName = data.streamName.replace("'s Stream", "");
                     activeSpeakersDiv.textContent = `Connected to: ${speakerName}`;
                 } else if (data.type === 'active_speakers') {
@@ -353,7 +306,9 @@
                     console.log('Received translation:', data.text);
                     console.log('Original text:', data.original);
                     showSubtitle(data.text);
-                    await speakText(data.text, targetLanguage.value);
+                    if (isAudioEnabled) {
+                        await speakText(data.text, targetLanguage.value);
+                    }
                 } else {
                     console.log('Received unknown message type:', data.type);
                 }
@@ -389,7 +344,14 @@
             translatedTextDiv.textContent = '';
             activeSpeakers.clear();
             updateActiveSpeakers();
-            stopAudio(); // Stop any playing audio when disconnecting
+            stopAudio();
+            
+            // Reset audio state
+            isAudioEnabled = false;
+            if (audioCtx) {
+                audioCtx.close();
+                audioCtx = null;
+            }
         }
 
         connectButton.addEventListener('click', connectWebSocket);
