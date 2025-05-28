@@ -80,36 +80,30 @@
 
         let audioCtx = null;
         connectButton.addEventListener('click', async () => {
-            // Initialize audio context on user interaction
             if (!audioCtx) {
-                // Create audio context with specific options for mobile
                 const AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioCtx = new AudioContext({
                     latencyHint: 'interactive',
                     sampleRate: 44100
                 });
-                
-                // Set audio context to play even in silent mode
-                if (audioCtx.setSinkId) {
-                    try {
-                        // Get the default audio output device
-                        const devices = await navigator.mediaDevices.enumerateDevices();
-                        const audioOutputs = devices.filter(device => device.kind === 'audiooutput');
-                        if (audioOutputs.length > 0) {
-                            await audioCtx.setSinkId(audioOutputs[0].deviceId);
-                        }
-                    } catch (err) {
-                        console.warn('Could not set audio output device:', err);
-                    }
-                }
+
+                // Unlock audio on iOS with silent oscillator
+                const unlockOsc = audioCtx.createOscillator();
+                const unlockGain = audioCtx.createGain();
+                unlockGain.gain.value = 0;
+                unlockOsc.connect(unlockGain);
+                unlockGain.connect(audioCtx.destination);
+                unlockOsc.start();
+                unlockOsc.stop(audioCtx.currentTime + 0.05);
             }
+
             try {
                 await audioCtx.resume();
                 console.log("Audio context resumed");
-                isAudioEnabled = true;
             } catch (err) {
                 console.error("Failed to resume audio context:", err);
             }
+
             connectWebSocket();
         });
 
@@ -165,15 +159,12 @@
             if (isPlaying || audioQueue.length === 0) return;
 
             isPlaying = true;
-            const { buffer, resolve, gainNode } = audioQueue.shift();
+            const { buffer, resolve } = audioQueue.shift();
 
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.playbackRate.value = 1.25;
-            
-            // Connect through gain node
-            source.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
+            source.connect(audioCtx.destination);
 
             source.onended = () => {
                 isPlaying = false;
@@ -221,15 +212,10 @@
                 const arrayBuffer = await response.arrayBuffer();
                 const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
 
-                // Create a gain node to control volume
-                const gainNode = audioCtx.createGain();
-                gainNode.gain.value = 1.0; // Full volume
-
-                // Push to queue with gain node
+                // Push to queue instead of playing immediately
                 audioQueue.push({
                     buffer: decodedData,
-                    resolve: () => {},
-                    gainNode: gainNode
+                    resolve: () => {}
                 });
 
                 processAudioQueue();
@@ -381,10 +367,7 @@
         }
     
         window.addEventListener("DOMContentLoaded", () => {
-            const silentAudio = new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA");
-            silentAudio.play().catch((err) => {
-                console.warn("Autoplay unlock failed (likely not user-initiated):", err);
-            });
+
 
             const emailSpan = document.getElementById("email");
             const loginBtn = document.getElementById("login-btn");
