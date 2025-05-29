@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -70,7 +70,7 @@
         let audioQueue = [];
         let isPlaying = false;
         let currentAudio = null;
-        let isAudioEnabled = false;
+
 
         let subtitleTimer = null;
         const subtitleQueue = [];
@@ -80,19 +80,19 @@
 
         let audioCtx = null;
         connectButton.addEventListener('click', async () => {
-            // Initialize audio context on user interaction
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                // const audioContext = audioCtx;
             }
             try {
                 await audioCtx.resume();
                 console.log("Audio context resumed");
-                isAudioEnabled = true;
             } catch (err) {
                 console.error("Failed to resume audio context:", err);
             }
             connectWebSocket();
         });
+
 
         function showSubtitle(text) {
             const wordCount = text.trim().split(/\s+/).length;
@@ -266,6 +266,7 @@
                 if (data.type === 'connected') {
                     console.log('Connected to stream:', data.streamName);
                     console.log('Stream description:', data.streamDesc);
+                    // Extract speaker name from stream name (removes "'s Stream" suffix)
                     const speakerName = data.streamName.replace("'s Stream", "");
                     activeSpeakersDiv.textContent = `Connected to: ${speakerName}`;
                 } else if (data.type === 'active_speakers') {
@@ -279,9 +280,7 @@
                     console.log('Received translation:', data.text);
                     console.log('Original text:', data.original);
                     showSubtitle(data.text);
-                    if (isAudioEnabled) {
-                        await speakText(data.text, targetLanguage.value);
-                    }
+                    await speakText(data.text, targetLanguage.value);
                 } else {
                     console.log('Received unknown message type:', data.type);
                 }
@@ -317,14 +316,7 @@
             translatedTextDiv.textContent = '';
             activeSpeakers.clear();
             updateActiveSpeakers();
-            stopAudio();
-            
-            // Reset audio state
-            isAudioEnabled = false;
-            if (audioCtx) {
-                audioCtx.close();
-                audioCtx = null;
-            }
+            stopAudio(); // Stop any playing audio when disconnecting
         }
 
         connectButton.addEventListener('click', connectWebSocket);
@@ -354,7 +346,10 @@
         }
     
         window.addEventListener("DOMContentLoaded", () => {
-
+            const silentAudio = new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA");
+            silentAudio.play().catch((err) => {
+                console.warn("Autoplay unlock failed (likely not user-initiated):", err);
+            });
 
             const emailSpan = document.getElementById("email");
             const loginBtn = document.getElementById("login-btn");
@@ -377,5 +372,279 @@
                 });
         });
     </script>    
+</body>
+</html> -->
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Audience Page - Live Translation</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 1rem;
+      font-family: sans-serif;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 1000px;
+      margin-bottom: 2rem;
+    }
+    .organization-name {
+      font-size: 1.2rem;
+      font-weight: bold;
+      padding: 0.5rem;
+    }
+    .top-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.5rem;
+      padding: 0.5rem;
+    }
+    .translated-center {
+      font-size: 2rem;
+      text-align: center;
+      min-height: 100px;
+      margin-top: 4rem;
+      max-width: 800px;
+      padding: 0 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="organization-name">[Organization Name]</div>
+    <div class="top-controls">
+      <select id="targetLanguage" class="form-control">
+        <option value="en">English</option>
+        <option value="ar">Arabic</option>
+        <option value="zh">Chinese (Simplified)</option>
+        <option value="da">Danish</option>
+        <option value="nl">Dutch</option>
+        <option value="fr">French</option>
+        <option value="de">German</option>
+        <option value="hi">Hindi</option>
+        <option value="it">Italian</option>
+        <option value="ja">Japanese</option>
+        <option value="ko">Korean</option>
+        <option value="pl">Polish</option>
+        <option value="pt">Portuguese</option>
+        <option value="ro">Romanian</option>
+        <option value="ru">Russian</option>
+        <option value="es">Spanish</option>
+        <option value="sv">Swedish</option>
+        <option value="tr">Turkish</option>
+      </select>
+      <button id="connectToggleButton" class="button">Connect to Stream</button>
+    </div>
+  </div>
+
+  <div id="translatedText" class="translated-center"></div>
+
+  <script>
+    let ws = null;
+    const connectButton = document.getElementById('connectToggleButton');
+    const translatedTextDiv = document.getElementById('translatedText');
+    const targetLanguage = document.getElementById('targetLanguage');
+    let isConnected = false;
+    let audioCtx = null;
+    let audioQueue = [];
+    let isPlaying = false;
+    let currentAudio = null;
+
+    const subtitleQueue = [];
+
+    function showSubtitle(text) {
+      const wordCount = text.trim().split(/\s+/).length;
+      const duration = Math.min(Math.max(wordCount * 500, 2000), 9000);
+      const expiresAt = Date.now() + duration;
+
+      subtitleQueue.push({ text, expiresAt });
+      updateSubtitleDisplay();
+
+      setTimeout(() => {
+        const now = Date.now();
+        while (subtitleQueue.length && subtitleQueue[0].expiresAt <= now) {
+          subtitleQueue.shift();
+        }
+        updateSubtitleDisplay();
+      }, duration + 10);
+    }
+
+    function updateSubtitleDisplay() {
+      translatedTextDiv.textContent = subtitleQueue.map(item => item.text).join(" ");
+    }
+
+    function getSpeakerCodeFromUrl() {
+      const pathParts = window.location.pathname.split('/');
+      return pathParts[pathParts.length - 1];
+    }
+
+    function getVoiceId(lang) {
+      const voices = {
+        'es': 'Lupe',
+        'fr': 'Celine',
+        'de': 'Marlene',
+        'it': 'Carla',
+        'ja': 'Mizuki',
+        'ko': 'Seoyeon',
+        'ru': 'Tatyana',
+        'hi': 'Aditi',
+        'en': 'Matthew',
+      };
+      return voices[lang] || 'Matthew';
+    }
+
+    async function speakText(text, lang) {
+      try {
+        const response = await fetch('/polly-tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, language: lang, voiceId: getVoiceId(lang) })
+        });
+
+        if (!response.ok) throw new Error('Failed to synthesize speech');
+
+        const arrayBuffer = await response.arrayBuffer();
+        const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
+
+        audioQueue.push({
+          buffer: decodedData,
+          resolve: () => {}
+        });
+
+        processAudioQueue();
+      } catch (error) {
+        console.error('Error queuing speech:', error);
+      }
+    }
+
+    async function processAudioQueue() {
+      if (isPlaying || audioQueue.length === 0) return;
+
+      isPlaying = true;
+      const { buffer, resolve } = audioQueue.shift();
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = 1.25;
+      source.connect(audioCtx.destination);
+
+      source.onended = () => {
+        isPlaying = false;
+        resolve();
+        processAudioQueue();
+      };
+
+      try {
+        source.start(0);
+      } catch (error) {
+        console.error('Playback error:', error);
+        isPlaying = false;
+        resolve();
+        processAudioQueue();
+      }
+    }
+
+    function stopAudio() {
+      if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+        currentAudio = null;
+      }
+      isPlaying = false;
+      audioQueue = [];
+    }
+
+    function connectToStream() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      audioCtx.resume().then(() => {
+        console.log("Audio context resumed");
+      }).catch(err => {
+        console.error("Failed to resume audio context:", err);
+      });
+
+      const speakerCode = getSpeakerCodeFromUrl();
+      const lang = targetLanguage.value;
+      const isSecure = window.location.protocol === 'https:';
+      const wsProtocol = isSecure ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProtocol}//${window.location.host}/ws?role=audience&lang=${lang}&speaker_code=${encodeURIComponent(speakerCode)}`;
+
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket opened');
+        connectButton.textContent = 'Disconnect';
+        isConnected = true;
+        targetLanguage.disabled = true;
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket closed');
+        connectButton.textContent = 'Connect to Stream';
+        isConnected = false;
+        targetLanguage.disabled = false;
+        stopAudio();
+        translatedTextDiv.textContent = '';
+        subtitleQueue.length = 0;
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onmessage = async (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'translation') {
+          showSubtitle(data.text);
+          await speakText(data.text, targetLanguage.value);
+        }
+      };
+    }
+
+    function disconnectFromStream() {
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+    }
+
+    connectButton.addEventListener('click', () => {
+      if (!isConnected) {
+        connectToStream();
+      } else {
+        disconnectFromStream();
+      }
+    });
+
+    targetLanguage.addEventListener('change', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ language: targetLanguage.value }));
+      }
+    });
+
+    window.onbeforeunload = () => {
+      if (ws) {
+        ws.close();
+      }
+      stopAudio();
+    };
+  </script>
 </body>
 </html>
