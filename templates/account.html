@@ -4,13 +4,75 @@
     <title>My Account - BMM Translation</title>
     <link rel="stylesheet" href="/static/styles.css">
     <style>
-        .center-content {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 70vh;
-            flex-direction: column;
-            text-align: center;
+        .account-container {
+            max-width: 1000px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .account-section {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        .stats-card {
+            margin-top: 1rem;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #0d6efd;
+            margin-bottom: 0.5rem;
+        }
+        .section-title {
+            color: #333;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .account-info {
+            padding: 1rem;
+        }
+        .info-group {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 6px;
+            margin-bottom: 1.5rem;
+        }
+        .info-group h4 {
+            color: #495057;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        .info-group p {
+            margin-bottom: 0.5rem;
+            color: #6c757d;
+        }
+        .info-group p strong {
+            color: #495057;
+            margin-right: 0.5rem;
+        }
+        .badge {
+            padding: 0.5em 0.75em;
+            font-weight: 500;
+        }
+        .btn {
+            margin-bottom: 0.5rem;
+        }
+        .btn:last-child {
+            margin-bottom: 0;
+        }
+        .stat-description {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-top: 0.5rem;
+            padding: 0 1rem;
+        }
+        .text-muted {
+            font-weight: 500;
+            color: #495057;
         }
     </style>
 </head>
@@ -32,8 +94,34 @@
         </div>
     </nav>
 
-    <div class="center-content" id="account-content">
-        <p>Loading account details...</p>
+    <div class="account-container">
+        <div class="account-section">
+            <h2 class="section-title">Account Information</h2>
+            <div id="account-content">
+                <p>Loading account details...</p>
+            </div>
+        </div>
+
+        <div class="account-section">
+            <h2 class="section-title">Usage Statistics</h2>
+            <div class="row text-center">
+                <div class="col-md-4">
+                    <div class="stat-value" id="totalHours">-</div>
+                    <div class="text-muted">Total Hours</div>
+                    <div class="stat-description">Total time spent in translation sessions</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-value" id="totalSessions">-</div>
+                    <div class="text-muted">Total Sessions</div>
+                    <div class="stat-description">Number of translation sessions completed</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="stat-value" id="totalSeconds">-</div>
+                    <div class="text-muted">Total Seconds</div>
+                    <div class="stat-description">Total time in seconds for precise tracking</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -61,16 +149,67 @@
 
                 // Account page debug display
                 accountContent.innerHTML = `
-                    <h2>Account Status</h2>
-                    <p><strong>Logged In:</strong> ${loggedIn}</p>
-                    <p><strong>Email:</strong> ${email ? email : "None"}</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="account-info">
+                                <div class="info-group mb-3">
+                                    <h4>Account Details</h4>
+                                    <p><strong>Email:</strong> ${email ? email : "None"}</p>
+                                    <p><strong>Status:</strong> <span class="badge ${loggedIn ? 'bg-success' : 'bg-warning'}">${loggedIn ? 'Active' : 'Not Logged In'}</span></p>
+                                    <p><strong>Last Login:</strong> <span id="last-login">Loading...</span></p>
+                                </div>
+                                <div class="info-group mb-3">
+                                    <h4>Subscription</h4>
+                                    <p><strong>Plan:</strong> <span id="subscription-plan">Loading...</span></p>
+                                    <p><strong>Next Billing Date:</strong> <span id="next-billing">Loading...</span></p>
+                                </div>
+                                <div class="info-group"></div>
+                            </div>
+                        </div>
+                    </div>
                 `;
+
+                // Fetch additional account details if logged in
+                if (loggedIn) {
+                    // Fetch account details
+                    fetch('/account-details', {
+                        credentials: 'include'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('last-login').textContent = data.last_login || 'N/A';
+                        document.getElementById('subscription-plan').textContent = data.subscription_plan || 'Free';
+                        document.getElementById('next-billing').textContent = data.next_billing || 'N/A';
+                    })
+                    .catch(error => {
+                        console.error('Error fetching account details:', error);
+                        document.getElementById('last-login').textContent = 'Error loading';
+                        document.getElementById('subscription-plan').textContent = 'Error loading';
+                        document.getElementById('next-billing').textContent = 'Error loading';
+                    });
+
+                    // Fetch usage statistics
+                    fetch('/speaker-usage', {
+                        credentials: 'include'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('totalHours').textContent = data.total_hours.toFixed(2);
+                        document.getElementById('totalSessions').textContent = data.session_count;
+                        document.getElementById('totalSeconds').textContent = Math.round(data.total_seconds);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching usage stats:', error);
+                    });
+                }
             })
             .catch(err => {
                 console.error("Error fetching session info:", err);
                 accountContent.innerHTML = `
-                    <h2>Error loading account data</h2>
-                    <p>Unable to retrieve session information.</p>
+                    <div class="alert alert-danger">
+                        <h4>Error loading account data</h4>
+                        <p>Unable to retrieve session information.</p>
+                    </div>
                 `;
             });
     </script>

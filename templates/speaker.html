@@ -302,6 +302,13 @@
             if (isRecording) {
                 isRecording = false;
                 
+                // Send disconnect message to server
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        type: 'disconnect'
+                    }));
+                }
+                
                 // Disconnect microphone and processor
                 if (microphone && processor) {
                     microphone.disconnect(processor);
@@ -313,8 +320,6 @@
                 stopButton.disabled = true;
                 statusDiv.textContent = 'Stopped';
                 sourceLanguage.disabled = false;
-
-
 
                 if (mediaStream) {
                     mediaStream.getTracks().forEach(track => track.stop());
@@ -328,7 +333,6 @@
                         processor = null;
                     });
                 }
-
             }
         }
 

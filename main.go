@@ -101,6 +101,7 @@ type DeepgramCallback struct {
 	SpeakerConn *websocket.Conn
 	sb          *strings.Builder // String builder to accumulate transcription
 	Stream      *Stream
+	DB          *sql.DB // Add database connection
 }
 
 // Message implements the LiveMessageCallback interface for handling message responses
@@ -250,6 +251,23 @@ func (cb *DeepgramCallback) processTranslations(text string) {
 		}
 		translations[targetLang] = translatedText
 		log.Printf("Translated '%s' (%s) to '%s' (%s)", text, cb.SourceLang, translatedText, targetLang)
+	}
+
+	// Get the current session ID
+	var sessionID int
+	err := cb.DB.QueryRow(`
+		SELECT id FROM speaking_sessions 
+		WHERE speaker_id = (SELECT id FROM speakers WHERE google_id = $1)
+		AND session_end IS NULL
+		ORDER BY session_start DESC LIMIT 1
+	`, cb.SpeakerID).Scan(&sessionID)
+	if err == nil {
+		// Track each unique language that was translated to
+		for targetLang := range translations {
+			if err := AddTranslatedLanguage(cb.DB, sessionID, targetLang); err != nil {
+				log.Printf("Error adding translated language: %v", err)
+			}
+		}
 	}
 
 	// Send translated text to relevant audience groups
@@ -419,6 +437,203 @@ func authMiddleware(db *sql.DB) gin.HandlerFunc {
 		log.Printf("Auth middleware: Authentication successful")
 		c.Next()
 	}
+}
+
+// UserInfo represents additional user information
+type UserInfo struct {
+	ID                int       `json:"id"`
+	SpeakerID         int       `json:"speaker_id"`
+	PreferredLanguage string    `json:"preferred_language"`
+	Timezone          string    `json:"timezone"`
+	NotificationPrefs string    `json:"notification_preferences"`
+	LastLogin         time.Time `json:"last_login"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// GetUserInfo retrieves user information for a given speaker ID
+func GetUserInfo(db *sql.DB, speakerID int) (*UserInfo, error) {
+	var userInfo UserInfo
+	err := db.QueryRow(`
+		SELECT id, speaker_id, preferred_language, timezone, 
+			   notification_preferences, last_login, created_at, updated_at
+		FROM user_info
+		WHERE speaker_id = $1
+	`, speakerID).Scan(
+		&userInfo.ID,
+		&userInfo.SpeakerID,
+		&userInfo.PreferredLanguage,
+		&userInfo.Timezone,
+		&userInfo.NotificationPrefs,
+		&userInfo.LastLogin,
+		&userInfo.CreatedAt,
+		&userInfo.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &userInfo, nil
+}
+
+// CreateUserInfo creates a new user information record
+func CreateUserInfo(db *sql.DB, userInfo *UserInfo) error {
+	_, err := db.Exec(`
+		INSERT INTO user_info (
+			speaker_id, preferred_language, timezone, 
+			notification_preferences, last_login
+		) VALUES ($1, $2, $3, $4, $5)
+	`,
+		userInfo.SpeakerID,
+		userInfo.PreferredLanguage,
+		userInfo.Timezone,
+		userInfo.NotificationPrefs,
+		time.Now(),
+	)
+	return err
+}
+
+// UpdateUserInfo updates existing user information
+func UpdateUserInfo(db *sql.DB, userInfo *UserInfo) error {
+	_, err := db.Exec(`
+		UPDATE user_info
+		SET preferred_language = $1,
+			timezone = $2,
+			notification_preferences = $3,
+			last_login = $4
+		WHERE speaker_id = $5
+	`,
+		userInfo.PreferredLanguage,
+		userInfo.Timezone,
+		userInfo.NotificationPrefs,
+		time.Now(),
+		userInfo.SpeakerID,
+	)
+	return err
+}
+
+// SpeakingSession represents a speaking session record
+type SpeakingSession struct {
+	ID                  int       `json:"id"`
+	SpeakerID           int       `json:"speaker_id"`
+	SpeakerName         string    `json:"speaker_name"`
+	GoogleSub           string    `json:"google_sub"`
+	SessionStart        time.Time `json:"session_start"`
+	SessionEnd          time.Time `json:"session_end"`
+	TotalDuration       string    `json:"total_duration"`
+	TotalAudienceConn   int       `json:"total_audience_connections"`
+	LanguagesTranslated []string  `json:"languages_translated"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
+// StartSpeakingSession creates a new speaking session record
+func StartSpeakingSession(db *sql.DB, speakerID int, speakerName, googleSub string) (int, error) {
+	var sessionID int
+	log.Printf("Starting new speaking session for speaker ID: %d, name: %s, google_sub: %s", speakerID, speakerName, googleSub)
+	err := db.QueryRow(`
+		INSERT INTO speaking_sessions 
+		(speaker_id, speaker_name, google_sub, session_start)
+		VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+		RETURNING id
+	`, speakerID, speakerName, googleSub).Scan(&sessionID)
+	if err != nil {
+		log.Printf("Error creating speaking session: %v", err)
+	} else {
+		log.Printf("Successfully created speaking session with ID: %d", sessionID)
+	}
+	return sessionID, err
+}
+
+// EndSpeakingSession updates the session end time and calculates duration
+func EndSpeakingSession(db *sql.DB, sessionID int) error {
+	log.Printf("Attempting to end speaking session with ID: %d", sessionID)
+	result, err := db.Exec(`
+		UPDATE speaking_sessions 
+		SET session_end = CURRENT_TIMESTAMP,
+			total_duration = CURRENT_TIMESTAMP - session_start
+		WHERE id = $1
+	`, sessionID)
+	if err != nil {
+		log.Printf("Error ending speaking session: %v", err)
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+	} else {
+		log.Printf("Successfully ended speaking session. Rows affected: %d", rowsAffected)
+	}
+	return nil
+}
+
+// IncrementAudienceCount increases the audience connection count
+func IncrementAudienceCount(db *sql.DB, sessionID int) error {
+	log.Printf("Incrementing audience count for session ID: %d", sessionID)
+
+	// First check current value
+	var currentCount sql.NullInt32
+	err := db.QueryRow("SELECT total_audience_connections FROM speaking_sessions WHERE id = $1", sessionID).Scan(&currentCount)
+	if err != nil {
+		log.Printf("Error checking current audience count: %v", err)
+	} else {
+		log.Printf("Current audience count before increment: %v", currentCount)
+	}
+
+	result, err := db.Exec(`
+		UPDATE speaking_sessions 
+		SET total_audience_connections = COALESCE(total_audience_connections, 0) + 1
+		WHERE id = $1
+	`, sessionID)
+	if err != nil {
+		log.Printf("Error incrementing audience count: %v", err)
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+	} else {
+		log.Printf("Successfully incremented audience count. Rows affected: %d", rowsAffected)
+	}
+
+	// Check new value after update
+	err = db.QueryRow("SELECT total_audience_connections FROM speaking_sessions WHERE id = $1", sessionID).Scan(&currentCount)
+	if err != nil {
+		log.Printf("Error checking new audience count: %v", err)
+	} else {
+		log.Printf("New audience count after increment: %v", currentCount)
+	}
+
+	return nil
+}
+
+// AddTranslatedLanguage adds a language to the languages_translated array
+func AddTranslatedLanguage(db *sql.DB, sessionID int, language string) error {
+	log.Printf("Adding translated language %s for session ID: %d", language, sessionID)
+	result, err := db.Exec(`
+		UPDATE speaking_sessions 
+		SET languages_translated = array_append(
+			COALESCE(languages_translated, ARRAY[]::text[]),
+			$2
+		)
+		WHERE id = $1
+		AND NOT ($2 = ANY(COALESCE(languages_translated, ARRAY[]::text[])))
+	`, sessionID, language)
+	if err != nil {
+		log.Printf("Error adding translated language: %v", err)
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+	} else {
+		log.Printf("Successfully added translated language. Rows affected: %d", rowsAffected)
+	}
+	return nil
 }
 
 func main() {
@@ -665,6 +880,36 @@ func main() {
 
 		// Redirect to the original destination
 		c.Redirect(http.StatusSeeOther, redirectTo)
+
+		// After successful authentication and user creation/update
+		var speakerID int
+		err = db.QueryRow("SELECT id FROM speakers WHERE google_id = $1", userInfo.Sub).Scan(&speakerID)
+		if err != nil {
+			log.Printf("Error getting speaker ID: %v", err)
+		} else {
+			// Check if user info exists
+			existingUserInfo, err := GetUserInfo(db, speakerID)
+			if err != nil {
+				log.Printf("Error checking user info: %v", err)
+			} else if existingUserInfo == nil {
+				// Create new user info
+				newUserInfo := &UserInfo{
+					SpeakerID:         speakerID,
+					PreferredLanguage: "en-US", // Default language
+					Timezone:          "UTC",   // Default timezone
+					NotificationPrefs: "{}",    // Default empty preferences
+				}
+				if err := CreateUserInfo(db, newUserInfo); err != nil {
+					log.Printf("Error creating user info: %v", err)
+				}
+			} else {
+				// Update last login
+				existingUserInfo.LastLogin = time.Now()
+				if err := UpdateUserInfo(db, existingUserInfo); err != nil {
+					log.Printf("Error updating user info: %v", err)
+				}
+			}
+		}
 	})
 
 	router.GET("/logout", func(c *gin.Context) {
@@ -858,6 +1103,126 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"speaker_code": speakerCode})
 	})
 
+	// Add new endpoint to get user info
+	router.GET("/user-info", authMiddleware(db), func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		var speakerID int
+		err := db.QueryRow("SELECT id FROM speakers WHERE google_id = $1", googleSub).Scan(&speakerID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get speaker ID"})
+			return
+		}
+
+		userInfo, err := GetUserInfo(db, speakerID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info"})
+			return
+		}
+
+		c.JSON(http.StatusOK, userInfo)
+	})
+
+	// Add new endpoint to update user info
+	router.POST("/user-info", authMiddleware(db), func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		var speakerID int
+		err := db.QueryRow("SELECT id FROM speakers WHERE google_id = $1", googleSub).Scan(&speakerID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get speaker ID"})
+			return
+		}
+
+		var userInfo UserInfo
+		if err := c.BindJSON(&userInfo); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+			return
+		}
+
+		userInfo.SpeakerID = speakerID
+		if err := UpdateUserInfo(db, &userInfo); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user info"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "User info updated successfully"})
+	})
+
+	// Add new endpoint to get speaker usage statistics
+	router.GET("/speaker-usage", authMiddleware(db), func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		var stats struct {
+			SpeakerName  string  `json:"speaker_name"`
+			Email        string  `json:"email"`
+			TotalSeconds float64 `json:"total_seconds"`
+			TotalHours   float64 `json:"total_hours"`
+			SessionCount int     `json:"session_count"`
+		}
+
+		err := db.QueryRow(`
+			SELECT 
+				s.name as speaker_name,
+				s.email,
+				SUM(EXTRACT(EPOCH FROM (COALESCE(ss.session_end, CURRENT_TIMESTAMP) - ss.session_start))) as total_seconds,
+				COUNT(*) as session_count
+			FROM speaking_sessions ss
+			JOIN speakers s ON ss.speaker_id = s.id
+			WHERE s.google_id = $1
+			GROUP BY s.name, s.email
+		`, googleSub).Scan(&stats.SpeakerName, &stats.Email, &stats.TotalSeconds, &stats.SessionCount)
+
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusOK, gin.H{
+					"message": "No sessions found",
+					"stats": gin.H{
+						"total_seconds": 0,
+						"total_hours":   0,
+						"session_count": 0,
+					},
+				})
+				return
+			}
+			log.Printf("Error getting speaker usage stats: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get usage statistics"})
+			return
+		}
+
+		stats.TotalHours = stats.TotalSeconds / 3600
+
+		c.JSON(http.StatusOK, gin.H{
+			"speaker_name":  stats.SpeakerName,
+			"email":         stats.Email,
+			"total_seconds": stats.TotalSeconds,
+			"total_hours":   stats.TotalHours,
+			"session_count": stats.SessionCount,
+		})
+	})
+
+	// Add route for usage statistics page
+	router.GET("/usage", authMiddleware(db), func(c *gin.Context) {
+		c.HTML(http.StatusOK, "usage.html", gin.H{
+			"title": "Usage Statistics",
+		})
+	})
+
 	// Get port from environment variable or use default
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -882,6 +1247,9 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 
 	// Get the appropriate stream
 	var currentStream *Stream
+	// Declare sessionID at function level
+	var sessionID int
+
 	if role == "speaker" {
 		// For speakers, we need to verify their speaker code
 		session, _ := store.Get(c.Request, "session-name")
@@ -932,6 +1300,45 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 		}
 		currentStream = stream
 		streamsMu.Unlock()
+
+		// Get the current speaker's session ID
+		err = db.QueryRow(`
+			SELECT id FROM speaking_sessions 
+			WHERE speaker_id = (SELECT id FROM speakers WHERE google_id = $1)
+			AND session_end IS NULL
+			ORDER BY session_start DESC LIMIT 1
+		`, googleSub).Scan(&sessionID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// No active session found, create a new one
+				log.Printf("No active session found for speaker %s, creating new session", googleSub)
+
+				// Get speaker's database ID and name
+				var dbSpeakerID int
+				var speakerName string
+				err := db.QueryRow("SELECT id, name FROM speakers WHERE google_id = $1", googleSub).Scan(&dbSpeakerID, &speakerName)
+				if err != nil {
+					log.Printf("Error getting speaker info: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get speaker info"})
+					return
+				}
+
+				// Start a new speaking session
+				sessionID, err = StartSpeakingSession(db, dbSpeakerID, speakerName, googleSub)
+				if err != nil {
+					log.Printf("Error starting speaking session: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start speaking session"})
+					return
+				}
+				log.Printf("Created new session with ID %d for speaker %s", sessionID, googleSub)
+			} else {
+				log.Printf("Error getting session ID: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get session ID"})
+				return
+			}
+		} else {
+			log.Printf("Using existing session with ID %d for speaker %s", sessionID, googleSub)
+		}
 	} else if role == "audience" {
 		// For audience members, we need to find the stream by speaker code
 		if speakerCode == "" {
@@ -987,6 +1394,20 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 			return
 		}
 
+		// Get speaker's database ID and name
+		var dbSpeakerID int
+		var speakerName string
+		err := db.QueryRow("SELECT id, name FROM speakers WHERE google_id = $1", speakerID).Scan(&dbSpeakerID, &speakerName)
+		if err != nil {
+			log.Printf("Error getting speaker info: %v", err)
+			conn.Close()
+			currentStream.mu.Unlock()
+			return
+		}
+
+		// Start a new speaking session
+		//sessionID, err := StartSpeakingSession(db, dbSpeakerID, speakerName, speakerID)
+
 		// Create context for Deepgram client
 		ctx, cancel := context.WithCancel(context.Background())
 
@@ -1009,7 +1430,8 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 			SpeakerID:   speakerID,
 			SpeakerConn: conn,
 			sb:          &strings.Builder{},
-			Stream:      currentStream, // Pass the stream to the callback
+			Stream:      currentStream,
+			DB:          db, // Add database connection
 		}
 
 		clientOptions := &clientinterfaces.ClientOptions{
@@ -1073,6 +1495,11 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 		currentStream.mu.RUnlock()
 
 		defer func() {
+			// End the speaking session when the speaker disconnects
+			if err := EndSpeakingSession(db, sessionID); err != nil {
+				log.Printf("Error ending speaking session: %v", err)
+			}
+
 			deepgramClient.Stop()
 			cancel()
 			conn.Close()
@@ -1119,6 +1546,23 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 		currentStream.Audience[audienceID] = audience
 		currentStream.mu.Unlock()
 
+		// Get the current speaker's session ID and increment audience count
+		var sessionID int
+		err := db.QueryRow(`
+			SELECT id FROM speaking_sessions 
+			WHERE speaker_id = (SELECT id FROM speakers WHERE speaker_code = $1)
+			AND session_end IS NULL
+			ORDER BY session_start DESC LIMIT 1
+		`, speakerCode).Scan(&sessionID)
+		if err == nil {
+			log.Printf("Found active session ID %d for speaker code %s, attempting to increment audience count", sessionID, speakerCode)
+			if err := IncrementAudienceCount(db, sessionID); err != nil {
+				log.Printf("Error incrementing audience count: %v", err)
+			}
+		} else {
+			log.Printf("No active session found for speaker code %s: %v", speakerCode, err)
+		}
+
 		// Send list of active speakers to new audience member
 		currentStream.mu.RLock()
 		activeSpeakersList := make([]string, 0, len(currentStream.Speakers))
@@ -1162,7 +1606,17 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("Error reading message: %v", err)
+				log.Printf("Unexpected WebSocket close for %s: %v", role, err)
+			} else {
+				log.Printf("WebSocket read error for %s: %v", role, err)
+			}
+
+			// Handle disconnection based on role
+			if role == "speaker" {
+				log.Printf("Speaker %s disconnected, ending session", googleSub)
+				if err := EndSpeakingSession(db, sessionID); err != nil {
+					log.Printf("Error ending speaking session: %v", err)
+				}
 			}
 			break
 		}
@@ -1178,6 +1632,40 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 				log.Printf("Received message type: %s", msgType)
 
 				switch msgType {
+				case "disconnect":
+					if role == "speaker" {
+						log.Printf("Speaker %s requested disconnect", googleSub)
+
+						// End the speaking session
+						if err := EndSpeakingSession(db, sessionID); err != nil {
+							log.Printf("Error ending speaking session: %v", err)
+						}
+
+						// Send confirmation to client
+						disconnectMsg := map[string]interface{}{
+							"type":    "disconnected",
+							"message": "Session ended successfully",
+						}
+						disconnectJSON, _ := json.Marshal(disconnectMsg)
+						conn.WriteMessage(websocket.TextMessage, disconnectJSON)
+
+						// Clean up the speaker's resources
+						currentStream.mu.Lock()
+						if speaker, exists := currentStream.Speakers[googleSub]; exists {
+							if speaker.DeepgramClient != nil {
+								speaker.DeepgramClient.Stop()
+							}
+							if speaker.DeepgramCancelCtx != nil {
+								speaker.DeepgramCancelCtx()
+							}
+							delete(currentStream.Speakers, googleSub)
+						}
+						currentStream.mu.Unlock()
+
+						// Close the connection
+						conn.Close()
+						return
+					}
 				case "audio":
 					if role == "speaker" {
 						speakerID := googleSub
