@@ -105,62 +105,110 @@ type DeepgramCallback struct {
 }
 
 // Message implements the LiveMessageCallback interface for handling message responses
+// func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
+// 	// Skip empty transcripts
+// 	sentence := strings.TrimSpace(mr.Channel.Alternatives[0].Transcript)
+// 	if len(mr.Channel.Alternatives) == 0 || len(sentence) == 0 {
+// 		return nil
+// 	}
+
+// 	// Process the transcription
+// 	log.Printf("[Deepgram] Transcription: %s (Final: %v)", sentence, mr.IsFinal)
+
+// 	if mr.IsFinal {
+// 		// Add to the string builder
+// 		cb.sb.WriteString(sentence)
+// 		cb.sb.WriteString(" ")
+
+// 		// When speech is final, send the complete transcription
+// 		if mr.SpeechFinal {
+// 			completedText := cb.sb.String()
+// 			log.Printf("[Deepgram] Final speech: %s", completedText)
+
+// 			// Send the transcript to the speaker
+// 			speechMsg := map[string]interface{}{
+// 				"type":     "transcription",
+// 				"text":     completedText,
+// 				"language": cb.SourceLang,
+// 			}
+// 			speechJSON, _ := json.Marshal(speechMsg)
+// 			if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, speechJSON); err != nil {
+// 				log.Printf("Failed to send transcription back to speaker: %v", err)
+// 			}
+
+// 			// Process translations for audience members
+// 			cb.processTranslations(completedText)
+
+// 			// Reset the buffer for the next utterance
+// 			cb.sb.Reset()
+// 		}
+// 	} else {
+// 		// For interim results, just log them
+// 		log.Printf("[Deepgram] Interim result: %s", sentence)
+
+// 		// Optionally send interim results to the speaker
+// 		// This would let them see partial transcriptions as they speak
+// 		interimMsg := map[string]interface{}{
+// 			"type":     "interim",
+// 			"text":     sentence,
+// 			"language": cb.SourceLang,
+// 		}
+// 		interimJSON, _ := json.Marshal(interimMsg)
+// 		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, interimJSON); err != nil {
+// 			log.Printf("Failed to send interim transcription to speaker: %v", err)
+// 		}
+// 	}
+// 	return nil
+// }
 func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
-	// Skip empty transcripts
+	if len(mr.Channel.Alternatives) == 0 {
+		return nil
+	}
 	sentence := strings.TrimSpace(mr.Channel.Alternatives[0].Transcript)
-	if len(mr.Channel.Alternatives) == 0 || len(sentence) == 0 {
+	if sentence == "" {
 		return nil
 	}
 
-	// Process the transcription
-	log.Printf("[Deepgram] Transcription: %s (Final: %v)", sentence, mr.IsFinal)
-
 	if mr.IsFinal {
-		// Add to the string builder
+		log.Printf("[Deepgram] Final: %s", sentence)
+
+		// Append finalized fragment to buffer
 		cb.sb.WriteString(sentence)
 		cb.sb.WriteString(" ")
 
-		// When speech is final, send the complete transcription
-		if mr.SpeechFinal {
-			completedText := cb.sb.String()
-			log.Printf("[Deepgram] Final speech: %s", completedText)
+		text := cb.sb.String()
 
-			// Send the transcript to the speaker
-			speechMsg := map[string]interface{}{
-				"type":     "transcription",
-				"text":     completedText,
-				"language": cb.SourceLang,
+		// Look for the last sentence-ending punctuation
+		splitIdx := strings.LastIndexAny(text, ".!?")
+		if splitIdx != -1 {
+			complete := strings.TrimSpace(text[:splitIdx+1])
+			remaining := strings.TrimSpace(text[splitIdx+1:])
+
+			if complete != "" {
+				cb.processTranslations(complete)
+
+				// Optionally send back to speaker as text
+				msg := map[string]interface{}{
+					"type":     "transcription",
+					"text":     complete,
+					"language": cb.SourceLang,
+				}
+				if jsonMsg, err := json.Marshal(msg); err == nil {
+					cb.SpeakerConn.WriteMessage(websocket.TextMessage, jsonMsg)
+				}
 			}
-			speechJSON, _ := json.Marshal(speechMsg)
-			if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, speechJSON); err != nil {
-				log.Printf("Failed to send transcription back to speaker: %v", err)
-			}
 
-			// Process translations for audience members
-			cb.processTranslations(completedText)
-
-			// Reset the buffer for the next utterance
+			// Retain the unpunctuated tail for the next chunk
 			cb.sb.Reset()
+			cb.sb.WriteString(remaining)
 		}
 	} else {
-		// For interim results, just log them
-		log.Printf("[Deepgram] Interim result: %s", sentence)
-
-		// Optionally send interim results to the speaker
-		// This would let them see partial transcriptions as they speak
-		interimMsg := map[string]interface{}{
-			"type":     "interim",
-			"text":     sentence,
-			"language": cb.SourceLang,
-		}
-		interimJSON, _ := json.Marshal(interimMsg)
-		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, interimJSON); err != nil {
-			log.Printf("Failed to send interim transcription to speaker: %v", err)
-		}
+		log.Printf("[Deepgram] Interim: %s", sentence)
 	}
 
 	return nil
 }
+
 
 // Open implements the LiveMessageCallback interface
 func (cb *DeepgramCallback) Open(ocr *msginterfaces.OpenResponse) error {
@@ -182,15 +230,44 @@ func (cb *DeepgramCallback) SpeechStarted(ssr *msginterfaces.SpeechStartedRespon
 }
 
 // UtteranceEnd implements the LiveMessageCallback interface
-func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse) error {
-	utterance := strings.TrimSpace(cb.sb.String())
-	if len(utterance) > 0 {
-		log.Printf("[Deepgram] Utterance end: %s", utterance)
+// func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse) error {
+// 	utterance := strings.TrimSpace(cb.sb.String())
+// 	if len(utterance) > 0 {
+// 		log.Printf("[Deepgram] Utterance end: %s", utterance)
 
-		// Send the final utterance to the speaker
+// 		// Send the final utterance to the speaker
+// 		utteranceMsg := map[string]interface{}{
+// 			"type":     "transcription",
+// 			"text":     utterance,
+// 			"language": cb.SourceLang,
+// 			"final":    true,
+// 		}
+// 		utteranceJSON, _ := json.Marshal(utteranceMsg)
+// 		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, utteranceJSON); err != nil {
+// 			log.Printf("Failed to send utterance to speaker: %v", err)
+// 		}
+
+// 		// Process translations for the audience
+// 		cb.processTranslations(utterance)
+
+// 		// Reset the buffer for the next utterance
+// 		cb.sb.Reset()
+// 	} else {
+// 		log.Printf("[Deepgram] Empty utterance end received")
+// 	}
+// 	return nil
+// }
+
+func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse) error {
+	// Get any leftover partial sentence that wasn't sent in Message()
+	remaining := strings.TrimSpace(cb.sb.String())
+	if remaining != "" {
+		log.Printf("[Deepgram] Utterance end (flushing leftover): %s", remaining)
+
+		// Send the final leftover fragment to the speaker
 		utteranceMsg := map[string]interface{}{
 			"type":     "transcription",
-			"text":     utterance,
+			"text":     remaining,
 			"language": cb.SourceLang,
 			"final":    true,
 		}
@@ -199,16 +276,17 @@ func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse)
 			log.Printf("Failed to send utterance to speaker: %v", err)
 		}
 
-		// Process translations for the audience
-		cb.processTranslations(utterance)
+		// Translate the leftover partial sentence (final flush)
+		cb.processTranslations(remaining)
 
-		// Reset the buffer for the next utterance
+		// Clear buffer
 		cb.sb.Reset()
 	} else {
 		log.Printf("[Deepgram] Empty utterance end received")
 	}
 	return nil
 }
+
 
 // Close implements the LiveMessageCallback interface
 func (cb *DeepgramCallback) Close(closeResponse *msginterfaces.CloseResponse) error {
