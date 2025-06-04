@@ -1801,59 +1801,84 @@ func extractGoogleUserInfo(resp *http.Response) (*GoogleUserInfo, error) {
 }
 
 // var neuralVoiceSupport = map[string]bool{
-// 	"en-US": true, // English (US)
-// 	"en-GB": true, // English (British)
-// 	"en-AU": true, // English (Australian)
-// 	"en-NZ": true, // English (New Zealand)
-// 	"en-IN": true, // English (Indian)
-// 	"es-ES": true, // Spanish (European)
-// 	"es-MX": true, // Spanish (Mexican)
-// 	"fr-FR": true, // French
-// 	"de-DE": true, // German
-// 	"it-IT": true, // Italian
-// 	"pt-BR": true, // Portuguese (Brazilian)
-// 	"ja-JP": true, // Japanese
-// 	"ko-KR": true, // Korean
-// 	"zh-CN": true, // Chinese (Mandarin)
+// 	"arb":    true, // Arabic
+// 	"ar-AE":  true, // Arabic (Gulf)
+// 	"ca-ES":  true, // Catalan
+// 	"cs-CZ":  true, // Czech
+// 	"da-DK":  true, // Danish
+// 	"de-DE":  true, // German
+// 	"de-AT":  true, // German (Austrian)
+// 	"en-US":  true, // English (US)
+// 	"en-GB":  true, // English (British)
+// 	"en-AU":  true, // English (Australian)
+// 	"en-IN":  true, // English (Indian)
+// 	"en-NZ":  true, // English (New Zealand)
+// 	"en-ZA":  true, // English (South African)
+// 	"es-ES":  true, // Spanish (Spain)
+// 	"es-MX":  true, // Spanish (Mexican)
+// 	"es-US":  true, // Spanish (US)
+// 	"fi-FI":  true, // Finnish
+// 	"fr-FR":  true, // French (France)
+// 	"fr-CA":  true, // French (Canada)
+// 	"hi-IN":  true, // Hindi
+// 	"is-IS":  true, // Icelandic
+// 	"it-IT":  true, // Italian
+// 	"ja-JP":  true, // Japanese
+// 	"ko-KR":  true, // Korean
+// 	"nb-NO":  true, // Norwegian
+// 	"nl-NL":  true, // Dutch
+// 	"pl-PL":  true, // Polish
+// 	"pt-BR":  true, // Portuguese (Brazilian)
+// 	"pt-PT":  true, // Portuguese (European)
+// 	"ro-RO":  true, // Romanian
+// 	"ru-RU":  true, // Russian
+// 	"sv-SE":  true, // Swedish
+// 	"tr-TR":  true, // Turkish
+// 	"zh-CN":  true, // Chinese (Mandarin)
+// 	"yue-CN": true,
+// 	"fr-BE": true,
+// 	"de-CH": true,
 // }
-var neuralVoiceSupport = map[string]bool{
-	"arb":    true, // Arabic
-	"ar-AE":  true, // Arabic (Gulf)
-	"ca-ES":  true, // Catalan
-	"cs-CZ":  true, // Czech
-	"da-DK":  true, // Danish
-	"de-DE":  true, // German
-	"de-AT":  true, // German (Austrian)
-	"en-US":  true, // English (US)
-	"en-GB":  true, // English (British)
-	"en-AU":  true, // English (Australian)
-	"en-IN":  true, // English (Indian)
-	"en-NZ":  true, // English (New Zealand)
-	"en-ZA":  true, // English (South African)
-	"es-ES":  true, // Spanish (Spain)
-	"es-MX":  true, // Spanish (Mexican)
-	"es-US":  true, // Spanish (US)
-	"fi-FI":  true, // Finnish
-	"fr-FR":  true, // French (France)
-	"fr-CA":  true, // French (Canada)
-	"hi-IN":  true, // Hindi
-	"is-IS":  true, // Icelandic
-	"it-IT":  true, // Italian
-	"ja-JP":  true, // Japanese
-	"ko-KR":  true, // Korean
-	"nb-NO":  true, // Norwegian
-	"nl-NL":  true, // Dutch
-	"pl-PL":  true, // Polish
-	"pt-BR":  true, // Portuguese (Brazilian)
-	"pt-PT":  true, // Portuguese (European)
-	"ro-RO":  true, // Romanian
-	"ru-RU":  true, // Russian
-	"sv-SE":  true, // Swedish
-	"tr-TR":  true, // Turkish
-	"zh-CN":  true, // Chinese (Mandarin)
-	"yue-CN": true,
-	"fr-BE": true,
-	"de-CH": true,
+var voiceSupportsNeural = map[string]bool{
+	"Matthew":   true,
+	"Brian":     true,
+	"Russell":   true,
+	"Joanna":    true,
+	"Kevin":     true,
+	"Kajal":     true,
+	"Aria":      true,
+	"Zeina":     true,
+	"Zayd":      true,
+	"Arlet":     true,
+	"Hiujin":    true,
+	"Zhiyu":     true,
+	"Jitka":     true,
+	"Mads":      true,
+	"Ruben":     true,
+	"Suvi":      true,
+	"Mathieu":   true,
+	"Isabelle":  true,
+	"Liam":      true,
+	"Daniel":    true,
+	"Hans":      true,
+	"Sabrina":   true,
+	"Aditi":     true,
+	"Karl":      true,
+	"Giorgio":   true,
+	"Takumi":    true,
+	"Seoyeon":   true,
+	"Ida":       true,
+	"Ola":       true,
+	"Ricardo":   true,
+	"Cristiano": true,
+	"Carmen":    true,
+	"Maxim":     true,
+	"Enrique":   true,
+	"Andrés":    true,
+	"Pedro":     true,
+	"Mattias":   true,
+	"Cem":       true,
+	"Gwyneth":   true,
 }
 
 
@@ -1874,96 +1899,6 @@ func handlePollyTTS(c *gin.Context) {
 	// Log the incoming request
 	log.Printf("Polly TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
 
-	// voiceId := types.VoiceId("Matthew")
-	// if req.VoiceId != "" {
-	// 	voiceId = types.VoiceId(req.VoiceId)
-	// } else {
-	// 	// Otherwise, select voice based on language
-	// 	switch req.Language {
-	// 	case "arb":
-	// 		voiceId = types.VoiceId("Zeina") // Female only
-	// 	case "ar-AE":
-	// 		voiceId = types.VoiceId("Hala") // Female only
-	// 	case "ca-ES":
-	// 		voiceId = types.VoiceId("Arlet") // Female only
-	// 	case "cs-CZ":
-	// 		voiceId = types.VoiceId("Vit")
-	// 	case "da-DK":
-	// 		voiceId = types.VoiceId("Mads")
-	// 	case "de-DE":
-	// 		voiceId = types.VoiceId("Hans")
-	// 	case "de-AT":
-	// 		voiceId = types.VoiceId("Hans")
-	// 	case "de-CH":
-	// 		voiceId = types.VoiceId("Sabrina")
-	// 	case "en-US":
-	// 		voiceId = types.VoiceId("Matthew")
-	// 	case "en-GB":
-	// 		voiceId = types.VoiceId("Brian")
-	// 	case "en-AU":
-	// 		voiceId = types.VoiceId("Russell")
-	// 	case "en-IN":
-	// 		voiceId = types.VoiceId("Amit")
-	// 	case "en-NZ":
-	// 		voiceId = types.VoiceId("Aria") // Female only
-	// 	case "en-SG":
-	// 		voiceId = types.VoiceId("Kevin")
-	// 	case "en-ZA":
-	// 		voiceId = types.VoiceId("Ayanda") // Female only
-	// 	case "en-GB-WLS":
-	// 		voiceId = types.VoiceId("Geraint")
-	// 	case "es-ES":
-	// 		voiceId = types.VoiceId("Enrique")
-	// 	case "es-MX":
-	// 		voiceId = types.VoiceId("Pedro")
-	// 	case "es-US":
-	// 		voiceId = types.VoiceId("Miguel")
-	// 	case "fi-FI":
-	// 		voiceId = types.VoiceId("Mikko")
-	// 	case "fr-FR":
-	// 		voiceId = types.VoiceId("Mathieu")
-	// 	case "fr-CA":
-	// 		voiceId = types.VoiceId("Gabriel")
-	// 	case "fr-BE":
-	// 		voiceId = types.VoiceId("Isabelle")
-	// 	case "hi-IN":
-	// 		voiceId = types.VoiceId("Aditi") // Only neutral/female
-	// 	case "is-IS":
-	// 		voiceId = types.VoiceId("Karl")
-	// 	case "it-IT":
-	// 		voiceId = types.VoiceId("Giorgio")
-	// 	case "ja-JP":
-	// 		voiceId = types.VoiceId("Takumi")
-	// 	case "ko-KR":
-	// 		voiceId = types.VoiceId("Joonho")
-	// 	case "nb-NO":
-	// 		voiceId = types.VoiceId("Finn")
-	// 	case "nl-NL":
-	// 		voiceId = types.VoiceId("Ruben")
-	// 	case "nl-BE":
-	// 		voiceId = types.VoiceId("Ruben")
-	// 	case "pl-PL":
-	// 		voiceId = types.VoiceId("Jan")
-	// 	case "pt-BR":
-	// 		voiceId = types.VoiceId("Ricardo")
-	// 	case "pt-PT":
-	// 		voiceId = types.VoiceId("Cristiano")
-	// 	case "ro-RO":
-	// 		voiceId = types.VoiceId("Carmen")
-	// 	case "ru-RU":
-	// 		voiceId = types.VoiceId("Maxim")
-	// 	case "sv-SE":
-	// 		voiceId = types.VoiceId("Mattias")
-	// 	case "tr-TR":
-	// 		voiceId = types.VoiceId("Cem")
-	// 	case "cy-GB":
-	// 		voiceId = types.VoiceId("Gwyneth") // Female only
-	// 	case "zh-CN":
-	// 		voiceId = types.VoiceId("Zhiyu")
-	// 	case "yue-CN":
-	// 		voiceId = types.VoiceId("Hiujin")
-	// 	}
-	// }
 	var voiceId types.VoiceId
 	if req.VoiceId != "" {
 		log.Printf("Using provided VoiceId: %s", req.VoiceId)
@@ -1976,13 +1911,21 @@ func handlePollyTTS(c *gin.Context) {
 	log.Printf("Selected voice ID: %s", voiceId)
 
 	// Determine if the language supports neural voices
+	// engine := types.EngineStandard
+	// if neuralVoiceSupport[req.Language] {
+	// 	engine = types.EngineNeural
+	// 	log.Printf("Using neural engine for language: %s", req.Language)
+	// } else {
+	// 	log.Printf("Using standard engine for language: %s (neural not supported)", req.Language)
+	// }
 	engine := types.EngineStandard
-	if neuralVoiceSupport[req.Language] {
+	if voiceSupportsNeural[req.VoiceId] {
 		engine = types.EngineNeural
-		log.Printf("Using neural engine for language: %s", req.Language)
+		log.Printf("Using neural engine for voice: %s", req.VoiceId)
 	} else {
-		log.Printf("Using standard engine for language: %s (neural not supported)", req.Language)
+		log.Printf("Using standard engine for voice: %s (neural not supported)", req.VoiceId)
 	}
+
 
 	input := &polly.SynthesizeSpeechInput{
 		Text:         aws.String(req.Text),
