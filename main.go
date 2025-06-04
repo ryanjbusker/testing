@@ -1859,7 +1859,6 @@ var voiceSupportsNeural = map[string]bool{
 	"Liam":      true,
 	"Daniel":    true,
 	"Sabrina":   true,
-	"Kajal":     true,
 	"Adriano":   true,
 	"Takumi":    true,
 	"Seoyeon":   true,
