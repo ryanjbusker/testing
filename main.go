@@ -861,7 +861,6 @@ func main() {
 	})
 
 	//The folllowing router.GET was added for OAuth
-	//The folllowing router.GET was added for OAuth
 	router.GET("/login", func(c *gin.Context) {
 		// Get the redirect URL from query parameter
 		redirectTo := c.Query("from")
@@ -1801,22 +1800,62 @@ func extractGoogleUserInfo(resp *http.Response) (*GoogleUserInfo, error) {
 	return &userInfo, nil
 }
 
+// var neuralVoiceSupport = map[string]bool{
+// 	"en-US": true, // English (US)
+// 	"en-GB": true, // English (British)
+// 	"en-AU": true, // English (Australian)
+// 	"en-NZ": true, // English (New Zealand)
+// 	"en-IN": true, // English (Indian)
+// 	"es-ES": true, // Spanish (European)
+// 	"es-MX": true, // Spanish (Mexican)
+// 	"fr-FR": true, // French
+// 	"de-DE": true, // German
+// 	"it-IT": true, // Italian
+// 	"pt-BR": true, // Portuguese (Brazilian)
+// 	"ja-JP": true, // Japanese
+// 	"ko-KR": true, // Korean
+// 	"zh-CN": true, // Chinese (Mandarin)
+// }
 var neuralVoiceSupport = map[string]bool{
-	"en-US": true, // English (US)
-	"en-GB": true, // English (British)
-	"en-AU": true, // English (Australian)
-	"en-NZ": true, // English (New Zealand)
-	"en-IN": true, // English (Indian)
-	"es-ES": true, // Spanish (European)
-	"es-MX": true, // Spanish (Mexican)
-	"fr-FR": true, // French
-	"de-DE": true, // German
-	"it-IT": true, // Italian
-	"pt-BR": true, // Portuguese (Brazilian)
-	"ja-JP": true, // Japanese
-	"ko-KR": true, // Korean
-	"zh-CN": true, // Chinese (Mandarin)
+	"arb":    true, // Arabic
+	"ar-AE":  true, // Arabic (Gulf)
+	"ca-ES":  true, // Catalan
+	"cs-CZ":  true, // Czech
+	"da-DK":  true, // Danish
+	"de-DE":  true, // German
+	"de-AT":  true, // German (Austrian)
+	"en-US":  true, // English (US)
+	"en-GB":  true, // English (British)
+	"en-AU":  true, // English (Australian)
+	"en-IN":  true, // English (Indian)
+	"en-NZ":  true, // English (New Zealand)
+	"en-ZA":  true, // English (South African)
+	"es-ES":  true, // Spanish (Spain)
+	"es-MX":  true, // Spanish (Mexican)
+	"es-US":  true, // Spanish (US)
+	"fi-FI":  true, // Finnish
+	"fr-FR":  true, // French (France)
+	"fr-CA":  true, // French (Canada)
+	"hi-IN":  true, // Hindi
+	"is-IS":  true, // Icelandic
+	"it-IT":  true, // Italian
+	"ja-JP":  true, // Japanese
+	"ko-KR":  true, // Korean
+	"nb-NO":  true, // Norwegian
+	"nl-NL":  true, // Dutch
+	"pl-PL":  true, // Polish
+	"pt-BR":  true, // Portuguese (Brazilian)
+	"pt-PT":  true, // Portuguese (European)
+	"ro-RO":  true, // Romanian
+	"ru-RU":  true, // Russian
+	"sv-SE":  true, // Swedish
+	"tr-TR":  true, // Turkish
+	"zh-CN":  true, // Chinese (Mandarin)
+	"yue-CN": true,
+	"fr-BE": true,
+	"de-CH": true,
 }
+
 
 func handlePollyTTS(c *gin.Context) {
 	log.Println("=== POLLY TTS ENDPOINT CALLED ===")
@@ -1841,32 +1880,88 @@ func handlePollyTTS(c *gin.Context) {
 	} else {
 		// Otherwise, select voice based on language
 		switch req.Language {
+		case "arb":
+			voiceId = types.VoiceId("Zeina") // Female only
+		case "ar-AE":
+			voiceId = types.VoiceId("Hala") // Female only
+		case "ca-ES":
+			voiceId = types.VoiceId("Arlet") // Female only
+		case "cs-CZ":
+			voiceId = types.VoiceId("Vit")
+		case "da-DK":
+			voiceId = types.VoiceId("Mads")
+		case "de-DE":
+			voiceId = types.VoiceId("Hans")
+		case "de-AT":
+			voiceId = types.VoiceId("Hans")
+		case "de-CH":
+			voiceId = types.VoiceId("Sabrina")
 		case "en-US":
 			voiceId = types.VoiceId("Matthew")
 		case "en-GB":
 			voiceId = types.VoiceId("Brian")
 		case "en-AU":
-			voiceId = types.VoiceId("Olivia")
+			voiceId = types.VoiceId("Russell")
 		case "en-IN":
-			voiceId = types.VoiceId("Kajal")
+			voiceId = types.VoiceId("Amit")
+		case "en-NZ":
+			voiceId = types.VoiceId("Aria") // Female only
+		case "en-SG":
+			voiceId = types.VoiceId("Kevin")
+		case "en-ZA":
+			voiceId = types.VoiceId("Ayanda") // Female only
+		case "en-GB-WLS":
+			voiceId = types.VoiceId("Geraint")
 		case "es-ES":
-			voiceId = types.VoiceId("Sergio")
+			voiceId = types.VoiceId("Enrique")
 		case "es-MX":
-			voiceId = types.VoiceId("Mia")
+			voiceId = types.VoiceId("Pedro")
+		case "es-US":
+			voiceId = types.VoiceId("Miguel")
+		case "fi-FI":
+			voiceId = types.VoiceId("Mikko")
 		case "fr-FR":
-			voiceId = types.VoiceId("Celine")
-		case "de-DE":
-			voiceId = types.VoiceId("Vicki")
+			voiceId = types.VoiceId("Mathieu")
+		case "fr-CA":
+			voiceId = types.VoiceId("Gabriel")
+		case "fr-BE":
+			voiceId = types.VoiceId("Isabelle")
+		case "hi-IN":
+			voiceId = types.VoiceId("Aditi") // Only neutral/female
+		case "is-IS":
+			voiceId = types.VoiceId("Karl")
 		case "it-IT":
-			voiceId = types.VoiceId("Carla")
-		case "pt-BR":
-			voiceId = types.VoiceId("Camila")
+			voiceId = types.VoiceId("Giorgio")
 		case "ja-JP":
 			voiceId = types.VoiceId("Takumi")
 		case "ko-KR":
-			voiceId = types.VoiceId("Seoyeon")
+			voiceId = types.VoiceId("Joonho")
+		case "nb-NO":
+			voiceId = types.VoiceId("Finn")
+		case "nl-NL":
+			voiceId = types.VoiceId("Ruben")
+		case "nl-BE":
+			voiceId = types.VoiceId("Ruben")
+		case "pl-PL":
+			voiceId = types.VoiceId("Jan")
+		case "pt-BR":
+			voiceId = types.VoiceId("Ricardo")
+		case "pt-PT":
+			voiceId = types.VoiceId("Cristiano")
+		case "ro-RO":
+			voiceId = types.VoiceId("Carmen")
+		case "ru-RU":
+			voiceId = types.VoiceId("Maxim")
+		case "sv-SE":
+			voiceId = types.VoiceId("Mattias")
+		case "tr-TR":
+			voiceId = types.VoiceId("Cem")
+		case "cy-GB":
+			voiceId = types.VoiceId("Gwyneth") // Female only
 		case "zh-CN":
 			voiceId = types.VoiceId("Zhiyu")
+		case "yue-CN":
+			voiceId = types.VoiceId("Hiujin")
 		}
 	}
 

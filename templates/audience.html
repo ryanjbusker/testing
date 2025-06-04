@@ -1,384 +1,3 @@
-<!-- <!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audience Page - Live Translation</title>
-    <link rel="stylesheet" href="/static/styles.css">
-</head>
-<body>
-    <div class="container">
-        <h1>Audience Page</h1>
-    
-        <div class="content-box">
-            <div class="form-group">
-                <label for="targetLanguage">Select Your Language</label>
-                <select id="targetLanguage" class="form-control">
-                    <option value="en">English</option>
-                    <option value="ar">Arabic</option>
-                    <option value="zh">Chinese (Simplified)</option>
-                    <option value="da">Danish</option>
-                    <option value="nl">Dutch</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                    <option value="hi">Hindi</option>
-                    <option value="it">Italian</option>
-                    <option value="ja">Japanese</option>
-                    <option value="ko">Korean</option>
-                    <option value="pl">Polish</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="ro">Romanian</option>
-                    <option value="ru">Russian</option>
-                    <option value="es">Spanish</option>
-                    <option value="sv">Swedish</option>
-                    <option value="tr">Turkish</option>
-                </select>
-                
-            </div>
-
-            <div class="button-group">
-                <button id="connectButton" class="button">Connect to Stream</button>
-                <button id="disconnectButton" class="button button-danger" disabled>Disconnect</button>
-            </div>
-
-            <div class="form-group">
-                <label>Status</label>
-                <div id="status" class="status-text">Not connected</div>
-            </div>
-
-            <div class="form-group">
-                <label>Active Speakers</label>
-                <div id="activeSpeakers" class="status-text">No active speakers</div>
-            </div>
-
-            <div class="form-group">
-                <label>Translated Text</label>
-                <div id="translatedText" class="text-box"></div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        let ws = null;
-        const connectButton = document.getElementById('connectButton');
-        const disconnectButton = document.getElementById('disconnectButton');
-        const statusDiv = document.getElementById('status');
-        const activeSpeakersDiv = document.getElementById('activeSpeakers');
-        const translatedTextDiv = document.getElementById('translatedText');
-        const targetLanguage = document.getElementById('targetLanguage');
-        let activeSpeakers = new Set();
-        let audioQueue = [];
-        let isPlaying = false;
-        let currentAudio = null;
-
-
-        let subtitleTimer = null;
-        const subtitleQueue = [];
-        function updateSubtitleDisplay() {
-            translatedTextDiv.textContent = subtitleQueue.map(item => item.text).join(" ");
-        }
-
-        let audioCtx = null;
-        connectButton.addEventListener('click', async () => {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                // const audioContext = audioCtx;
-            }
-            try {
-                await audioCtx.resume();
-                console.log("Audio context resumed");
-            } catch (err) {
-                console.error("Failed to resume audio context:", err);
-            }
-            connectWebSocket();
-        });
-
-
-        function showSubtitle(text) {
-            const wordCount = text.trim().split(/\s+/).length;
-            const duration = Math.min(Math.max(wordCount * 500, 2000), 9000);
-            const expiresAt = Date.now() + duration;
-
-            // Add new text block
-            subtitleQueue.push({ text, expiresAt });
-            updateSubtitleDisplay();
-
-            // Schedule cleanup
-            setTimeout(() => {
-                // Remove expired items
-                const now = Date.now();
-                while (subtitleQueue.length && subtitleQueue[0].expiresAt <= now) {
-                    subtitleQueue.shift();
-                }
-                updateSubtitleDisplay();
-            }, duration + 10); // small buffer to ensure cleanup
-        }
-
-        function getSpeakerCodeFromUrl() {
-            const pathParts = window.location.pathname.split('/');
-            return pathParts[pathParts.length - 1];
-        }
-
-        function updateActiveSpeakers() {
-            if (activeSpeakers.size === 0) {
-                activeSpeakersDiv.textContent = 'No active speakers';
-            } else {
-                activeSpeakersDiv.textContent = `Active Speakers: ${Array.from(activeSpeakers).join(', ')}`;
-            }
-        }
-        function getVoiceId(lang) {
-            const voices = {
-                'es': 'Lupe',
-                'fr': 'Celine',
-                'de': 'Marlene',
-                'it': 'Carla',
-                'ja': 'Mizuki',
-                'ko': 'Seoyeon',
-                'ru': 'Tatyana',
-                'hi': 'Aditi',
-                'en': 'Matthew',
-                // Add more as needed
-            };
-            return voices[lang] || 'Matthew'; // Fallback to English
-        }
-
-        async function processAudioQueue() {
-            if (isPlaying || audioQueue.length === 0) return;
-
-            isPlaying = true;
-            const { buffer, resolve } = audioQueue.shift();
-
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.playbackRate.value = 1.25;
-            source.connect(audioCtx.destination);
-
-            source.onended = () => {
-                isPlaying = false;
-                resolve();
-                processAudioQueue(); // Play next one in queue
-            };
-
-            try {
-                source.start(0);
-            } catch (error) {
-                console.error('Playback error:', error);
-                isPlaying = false;
-                resolve();
-                processAudioQueue();
-            }
-        }
-
-        // Function to stop current audio and clear queue
-        function stopAudio() {
-            if (currentAudio) {
-                currentAudio.pause();
-                currentAudio.currentTime = 0;
-                currentAudio = null;
-            }
-            isPlaying = false;
-            audioQueue = [];
-        }
-
-        async function speakText(text, lang) {
-            try {
-                const response = await fetch('/polly-tts', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        text: text,
-                        language: lang,
-                        voiceId: getVoiceId(lang)
-                    })
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to synthesize speech');
-                }
-
-                const arrayBuffer = await response.arrayBuffer();
-                const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
-
-                // Push to queue instead of playing immediately
-                audioQueue.push({
-                    buffer: decodedData,
-                    resolve: () => {}
-                });
-
-                processAudioQueue();
-            } catch (error) {
-                console.error('Error queuing speech:', error);
-            }
-        }
-
-        function connectWebSocket() {
-            if (ws) {
-                console.log('Closing existing WebSocket connection...');
-                ws.close();
-            }
-
-            const speakerCode = getSpeakerCodeFromUrl();
-            console.log('Extracted speaker code from URL:', speakerCode);
-            
-            const lang = targetLanguage.value;
-            console.log('Selected target language:', lang);
-            
-            // Determine if we're in production based on the protocol
-            const isSecure = window.location.protocol === 'https:';
-            const wsProtocol = isSecure ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${window.location.host}/ws?role=audience&lang=${lang}&speaker_code=${encodeURIComponent(speakerCode)}`;
-
-            console.log('Connecting to WebSocket:', wsUrl);
-
-            ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                console.log('WebSocket connection opened successfully');
-                statusDiv.textContent = 'Connected';
-                connectButton.disabled = true;
-                disconnectButton.disabled = false;
-                targetLanguage.disabled = true;
-            };
-
-            ws.onclose = (event) => {
-                console.log('WebSocket closed:', event.code, event.reason);
-                statusDiv.textContent = 'Disconnected';
-                connectButton.disabled = false;
-                disconnectButton.disabled = true;
-                targetLanguage.disabled = false;
-                activeSpeakers.clear();
-                updateActiveSpeakers();
-                stopAudio(); // Stop any playing audio when disconnected
-            };
-
-            ws.onerror = (error) => {
-                console.error('WebSocket error:', error);
-                statusDiv.textContent = 'Error: Connection failed';
-                connectButton.disabled = false;
-                disconnectButton.disabled = true;
-                targetLanguage.disabled = false;
-            };
-
-            ws.onmessage = async (event) => {
-                const data = JSON.parse(event.data);
-                console.log('Received WebSocket message:', data);
-
-                if (data.type === 'connected') {
-                    console.log('Connected to stream:', data.streamName);
-                    console.log('Stream description:', data.streamDesc);
-                    // Extract speaker name from stream name (removes "'s Stream" suffix)
-                    const speakerName = data.streamName.replace("'s Stream", "");
-                    activeSpeakersDiv.textContent = `Connected to: ${speakerName}`;
-                } else if (data.type === 'active_speakers') {
-                    console.log('Received active speakers list:', data.speakers);
-                    if (data.speakers.length > 0) {
-                        activeSpeakersDiv.textContent = `Connected to: ${data.speakers[0]}`;
-                    } else {
-                        activeSpeakersDiv.textContent = 'Not connected to any speaker';
-                    }
-                } else if (data.type === 'translation') {
-                    console.log('Received translation:', data.text);
-                    console.log('Original text:', data.original);
-                    showSubtitle(data.text);
-                    await speakText(data.text, targetLanguage.value);
-                } else {
-                    console.log('Received unknown message type:', data.type);
-                }
-            };
-        }
-
-        connectButton.addEventListener('click', connectWebSocket);
-        disconnectButton.addEventListener('click', () => {
-            if (ws) {
-                ws.close();
-            }
-        });
-
-        // Clean up on page unload
-        window.onbeforeunload = function() {
-            if (ws) {
-                ws.close();
-            }
-            stopAudio();
-        };
-
-        function disconnectWebSocket() {
-            if (ws) {
-                ws.close();
-                ws = null;
-            }
-            
-            // Reset UI elements
-            statusDiv.textContent = 'Not connected';
-            connectButton.disabled = false;
-            disconnectButton.disabled = true;
-            targetLanguage.disabled = false;
-            translatedTextDiv.textContent = '';
-            activeSpeakers.clear();
-            updateActiveSpeakers();
-            stopAudio(); // Stop any playing audio when disconnecting
-        }
-
-        connectButton.addEventListener('click', connectWebSocket);
-        disconnectButton.addEventListener('click', disconnectWebSocket);
-        targetLanguage.addEventListener('change', () => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    language: targetLanguage.value
-                }));
-            }
-        });
-
-        // Clean up on page unload
-        window.onbeforeunload = function() {
-            if (ws) {
-                ws.close();
-            }
-        };
-
-        const loginBtn = document.getElementById("login-btn");
-        const logoutBtn = document.getElementById("logout-btn");
-        const emailSpan = document.getElementById("user-email");
-    
-        // Redirect back to this page after login
-        if (loginBtn) {
-            loginBtn.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
-        }
-    
-        window.addEventListener("DOMContentLoaded", () => {
-            const silentAudio = new Audio("data:audio/mp3;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA");
-            silentAudio.play().catch((err) => {
-                console.warn("Autoplay unlock failed (likely not user-initiated):", err);
-            });
-
-            const emailSpan = document.getElementById("email");
-            const loginBtn = document.getElementById("login-btn");
-            const logoutBtn = document.getElementById("logout-btn");
-
-            fetch("/session")
-                .then(res => res.json())
-                .then(data => {
-                    if (emailSpan && loginBtn && logoutBtn) {
-                        if (data.email) {
-                            emailSpan.textContent = data.email;
-                            loginBtn.style.display = "none";
-                            logoutBtn.style.display = "inline";
-                        } else {
-                            emailSpan.textContent = "";
-                            loginBtn.style.display = "inline";
-                            logoutBtn.style.display = "none";
-                        }
-                    }
-                });
-        });
-    </script>    
-</body>
-</html> -->
-
-
-
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -431,22 +50,45 @@
       <select id="targetLanguage" class="form-control">
         <option value="en">English</option>
         <option value="ar">Arabic</option>
-        <option value="zh">Chinese (Simplified)</option>
+        <option value="ar">Arabic (Gulf)</option>
+        <option value="ca">Catalan</option>
+        <option value="zh">Chinese (Cantonese)</option>
+        <option value="zh">Chinese (Mandarin)</option>
+        <option value="cs">Czech</option>
         <option value="da">Danish</option>
         <option value="nl">Dutch</option>
+        <option value="nl">Dutch (Belgian)</option>
+        <option value="en">English (Australian)</option>
+        <option value="en">English (British)</option>
+        <option value="en">English (Indian)</option>
+        <option value="en">English (New Zealand)</option>
+        <option value="en">English (Singaporean)</option>
+        <option value="en">English (South African)</option>
+        <option value="en">English (Welsh)</option>
+        <option value="fi">Finnish</option>
         <option value="fr">French</option>
+        <option value="fr">French (Belgian)</option>
+        <option value="fr-CA">French (Canadian)</option>
         <option value="de">German</option>
+        <option value="de">German (Austrian)</option>
+        <option value="de">German (Swiss Standard)</option>
         <option value="hi">Hindi</option>
+        <option value="is">Icelandic</option>
         <option value="it">Italian</option>
         <option value="ja">Japanese</option>
         <option value="ko">Korean</option>
+        <option value="no">Norwegian</option>
         <option value="pl">Polish</option>
-        <option value="pt">Portuguese</option>
+        <option value="pt">Portuguese (Brazilian)</option>
+        <option value="pt-PT">Portuguese (European)</option>
         <option value="ro">Romanian</option>
         <option value="ru">Russian</option>
-        <option value="es">Spanish</option>
+        <option value="es">Spanish (Spain)</option>
+        <option value="es-MX">Spanish (Mexican)</option>
+        <option value="es">Spanish (US)</option>
         <option value="sv">Swedish</option>
         <option value="tr">Turkish</option>
+        <option value="cy">Welsh</option>
       </select>
       <button id="connectToggleButton" class="button">Connect to Stream</button>
     </div>
@@ -493,27 +135,109 @@
       return pathParts[pathParts.length - 1];
     }
 
-    function getVoiceId(lang) {
-      const voices = {
-        'es': 'Lupe',
-        'fr': 'Celine',
-        'de': 'Marlene',
-        'it': 'Carla',
-        'ja': 'Mizuki',
-        'ko': 'Seoyeon',
-        'ru': 'Tatyana',
-        'hi': 'Aditi',
-        'en': 'Matthew',
-      };
-      return voices[lang] || 'Matthew';
+    // function getVoiceId(lang) {
+    //     const voices = {
+    //         'arb': 'Zeina',
+    //         'ar-AE': 'Hala',
+    //         'ca-ES': 'Arlet',
+    //         'yue-CN': 'Zhiyu',
+    //         'cmn-CN': 'Zhiyu',
+    //         'cs-CZ': 'Vit',
+    //         'da-DK': 'Mads',
+    //         'nl-BE': 'Ruben',
+    //         'nl-NL': 'Ruben',
+    //         'en-AU': 'Russell',
+    //         'en-GB': 'Brian',
+    //         'en-IN': 'Amit',
+    //         'en-NZ': 'Aria',
+    //         'en-SG': 'Kevin',
+    //         'en-ZA': 'Ayanda',
+    //         'en-US': 'Matthew',
+    //         'en-GB-WLS': 'Geraint',
+    //         'fi-FI': 'Mikko',
+    //         'fr-FR': 'Mathieu',
+    //         'fr-BE': 'Mathieu',
+    //         'fr-CA': 'Gabriel',
+    //         'hi-IN': 'Aditi',
+    //         'de-DE': 'Hans',
+    //         'de-AT': 'Hans',
+    //         'de-CH': 'Karsten',
+    //         'is-IS': 'Karl',
+    //         'it-IT': 'Giorgio',
+    //         'ja-JP': 'Takumi',
+    //         'ko-KR': 'Joonho',
+    //         'nb-NO': 'Finn',
+    //         'pl-PL': 'Jan',
+    //         'pt-BR': 'Ricardo',
+    //         'pt-PT': 'Cristiano',
+    //         'ro-RO': 'Cristian',
+    //         'ru-RU': 'Maxim',
+    //         'es-ES': 'Enrique',
+    //         'es-MX': 'Pedro',
+    //         'es-US': 'Miguel',
+    //         'sv-SE': 'Mattias',
+    //         'tr-TR': 'Cem',
+    //         'cy-GB': 'Gwyneth',
+    //     };
+    //     return voices[lang] || 'Matthew';
+    // }
+    function getVoiceId(label) {
+        const voices = {
+            'Arabic': 'Zeina',
+            'Arabic (Gulf)': 'Hala',
+            'Catalan': 'Arlet',
+            'Chinese (Cantonese)': 'Zhiyu',
+            'Chinese (Mandarin)': 'Zhiyu',
+            'Czech': 'Vit',
+            'Danish': 'Mads',
+            'Dutch': 'Ruben',
+            'Dutch (Belgian)': 'Ruben',
+            'English': 'Matthew',
+            'English (Australian)': 'Russell',
+            'English (British)': 'Brian',
+            'English (Indian)': 'Amit',
+            'English (New Zealand)': 'Aria',
+            'English (Singaporean)': 'Kevin',
+            'English (South African)': 'Ayanda',
+            'English (Welsh)': 'Geraint',
+            'Finnish': 'Mikko',
+            'French': 'Mathieu',
+            'French (Belgian)': 'Mathieu',
+            'French (Canadian)': 'Gabriel',
+            'German': 'Hans',
+            'German (Austrian)': 'Hans',
+            'German (Swiss Standard)': 'Karsten',
+            'Hindi': 'Aditi',
+            'Icelandic': 'Karl',
+            'Italian': 'Giorgio',
+            'Japanese': 'Takumi',
+            'Korean': 'Joonho',
+            'Norwegian': 'Finn',
+            'Polish': 'Jan',
+            'Portuguese (Brazilian)': 'Ricardo',
+            'Portuguese (European)': 'Cristiano',
+            'Romanian': 'Cristian',
+            'Russian': 'Maxim',
+            'Spanish (Spain)': 'Enrique',
+            'Spanish (Mexican)': 'Pedro',
+            'Spanish (US)': 'Miguel',
+            'Swedish': 'Mattias',
+            'Turkish': 'Cem',
+            'Welsh': 'Gwyneth'
+        };
+        return voices[label] || 'Matthew'; // Default to English male
     }
 
     async function speakText(text, lang) {
       try {
+        const selectedOption = targetLanguage.options[targetLanguage.selectedIndex];
+        const label = selectedOption.text;
         const response = await fetch('/polly-tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text, language: lang, voiceId: getVoiceId(lang) })
+        //   body: JSON.stringify({ text, language: lang, voiceId: getVoiceId(lang) })
+          body: JSON.stringify({ text, language: lang, voiceId: getVoiceId(label) })
+
         });
 
         if (!response.ok) throw new Error('Failed to synthesize speech');
