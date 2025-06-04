@@ -831,7 +831,7 @@ func main() {
 		})
 	})
 
-	router.GET("/streams", func(c *gin.Context) {
+	router.GET("/streams",  authMiddleware(db), func(c *gin.Context) {
 		mu.RLock()
 		activeStreams := make([]map[string]interface{}, 0)
 		activeStreams = append(activeStreams, map[string]interface{}{
@@ -1022,7 +1022,7 @@ func main() {
 		c.Redirect(http.StatusSeeOther, "/")
 	})
 
-	router.GET("/account", func(c *gin.Context) {
+	router.GET("/account",  authMiddleware(db), func(c *gin.Context) {
 		log.Printf("Serving account.html")
 		c.HTML(http.StatusOK, "account.html", gin.H{
 			"title": "Account",
