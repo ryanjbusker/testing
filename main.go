@@ -1874,95 +1874,103 @@ func handlePollyTTS(c *gin.Context) {
 	// Log the incoming request
 	log.Printf("Polly TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
 
-	voiceId := types.VoiceId("Matthew")
+	// voiceId := types.VoiceId("Matthew")
+	// if req.VoiceId != "" {
+	// 	voiceId = types.VoiceId(req.VoiceId)
+	// } else {
+	// 	// Otherwise, select voice based on language
+	// 	switch req.Language {
+	// 	case "arb":
+	// 		voiceId = types.VoiceId("Zeina") // Female only
+	// 	case "ar-AE":
+	// 		voiceId = types.VoiceId("Hala") // Female only
+	// 	case "ca-ES":
+	// 		voiceId = types.VoiceId("Arlet") // Female only
+	// 	case "cs-CZ":
+	// 		voiceId = types.VoiceId("Vit")
+	// 	case "da-DK":
+	// 		voiceId = types.VoiceId("Mads")
+	// 	case "de-DE":
+	// 		voiceId = types.VoiceId("Hans")
+	// 	case "de-AT":
+	// 		voiceId = types.VoiceId("Hans")
+	// 	case "de-CH":
+	// 		voiceId = types.VoiceId("Sabrina")
+	// 	case "en-US":
+	// 		voiceId = types.VoiceId("Matthew")
+	// 	case "en-GB":
+	// 		voiceId = types.VoiceId("Brian")
+	// 	case "en-AU":
+	// 		voiceId = types.VoiceId("Russell")
+	// 	case "en-IN":
+	// 		voiceId = types.VoiceId("Amit")
+	// 	case "en-NZ":
+	// 		voiceId = types.VoiceId("Aria") // Female only
+	// 	case "en-SG":
+	// 		voiceId = types.VoiceId("Kevin")
+	// 	case "en-ZA":
+	// 		voiceId = types.VoiceId("Ayanda") // Female only
+	// 	case "en-GB-WLS":
+	// 		voiceId = types.VoiceId("Geraint")
+	// 	case "es-ES":
+	// 		voiceId = types.VoiceId("Enrique")
+	// 	case "es-MX":
+	// 		voiceId = types.VoiceId("Pedro")
+	// 	case "es-US":
+	// 		voiceId = types.VoiceId("Miguel")
+	// 	case "fi-FI":
+	// 		voiceId = types.VoiceId("Mikko")
+	// 	case "fr-FR":
+	// 		voiceId = types.VoiceId("Mathieu")
+	// 	case "fr-CA":
+	// 		voiceId = types.VoiceId("Gabriel")
+	// 	case "fr-BE":
+	// 		voiceId = types.VoiceId("Isabelle")
+	// 	case "hi-IN":
+	// 		voiceId = types.VoiceId("Aditi") // Only neutral/female
+	// 	case "is-IS":
+	// 		voiceId = types.VoiceId("Karl")
+	// 	case "it-IT":
+	// 		voiceId = types.VoiceId("Giorgio")
+	// 	case "ja-JP":
+	// 		voiceId = types.VoiceId("Takumi")
+	// 	case "ko-KR":
+	// 		voiceId = types.VoiceId("Joonho")
+	// 	case "nb-NO":
+	// 		voiceId = types.VoiceId("Finn")
+	// 	case "nl-NL":
+	// 		voiceId = types.VoiceId("Ruben")
+	// 	case "nl-BE":
+	// 		voiceId = types.VoiceId("Ruben")
+	// 	case "pl-PL":
+	// 		voiceId = types.VoiceId("Jan")
+	// 	case "pt-BR":
+	// 		voiceId = types.VoiceId("Ricardo")
+	// 	case "pt-PT":
+	// 		voiceId = types.VoiceId("Cristiano")
+	// 	case "ro-RO":
+	// 		voiceId = types.VoiceId("Carmen")
+	// 	case "ru-RU":
+	// 		voiceId = types.VoiceId("Maxim")
+	// 	case "sv-SE":
+	// 		voiceId = types.VoiceId("Mattias")
+	// 	case "tr-TR":
+	// 		voiceId = types.VoiceId("Cem")
+	// 	case "cy-GB":
+	// 		voiceId = types.VoiceId("Gwyneth") // Female only
+	// 	case "zh-CN":
+	// 		voiceId = types.VoiceId("Zhiyu")
+	// 	case "yue-CN":
+	// 		voiceId = types.VoiceId("Hiujin")
+	// 	}
+	// }
+	var voiceId types.VoiceId
 	if req.VoiceId != "" {
+		log.Printf("Using provided VoiceId: %s", req.VoiceId)
 		voiceId = types.VoiceId(req.VoiceId)
 	} else {
-		// Otherwise, select voice based on language
-		switch req.Language {
-		case "arb":
-			voiceId = types.VoiceId("Zeina") // Female only
-		case "ar-AE":
-			voiceId = types.VoiceId("Hala") // Female only
-		case "ca-ES":
-			voiceId = types.VoiceId("Arlet") // Female only
-		case "cs-CZ":
-			voiceId = types.VoiceId("Vit")
-		case "da-DK":
-			voiceId = types.VoiceId("Mads")
-		case "de-DE":
-			voiceId = types.VoiceId("Hans")
-		case "de-AT":
-			voiceId = types.VoiceId("Hans")
-		case "de-CH":
-			voiceId = types.VoiceId("Sabrina")
-		case "en-US":
-			voiceId = types.VoiceId("Matthew")
-		case "en-GB":
-			voiceId = types.VoiceId("Brian")
-		case "en-AU":
-			voiceId = types.VoiceId("Russell")
-		case "en-IN":
-			voiceId = types.VoiceId("Amit")
-		case "en-NZ":
-			voiceId = types.VoiceId("Aria") // Female only
-		case "en-SG":
-			voiceId = types.VoiceId("Kevin")
-		case "en-ZA":
-			voiceId = types.VoiceId("Ayanda") // Female only
-		case "en-GB-WLS":
-			voiceId = types.VoiceId("Geraint")
-		case "es-ES":
-			voiceId = types.VoiceId("Enrique")
-		case "es-MX":
-			voiceId = types.VoiceId("Pedro")
-		case "es-US":
-			voiceId = types.VoiceId("Miguel")
-		case "fi-FI":
-			voiceId = types.VoiceId("Mikko")
-		case "fr-FR":
-			voiceId = types.VoiceId("Mathieu")
-		case "fr-CA":
-			voiceId = types.VoiceId("Gabriel")
-		case "fr-BE":
-			voiceId = types.VoiceId("Isabelle")
-		case "hi-IN":
-			voiceId = types.VoiceId("Aditi") // Only neutral/female
-		case "is-IS":
-			voiceId = types.VoiceId("Karl")
-		case "it-IT":
-			voiceId = types.VoiceId("Giorgio")
-		case "ja-JP":
-			voiceId = types.VoiceId("Takumi")
-		case "ko-KR":
-			voiceId = types.VoiceId("Joonho")
-		case "nb-NO":
-			voiceId = types.VoiceId("Finn")
-		case "nl-NL":
-			voiceId = types.VoiceId("Ruben")
-		case "nl-BE":
-			voiceId = types.VoiceId("Ruben")
-		case "pl-PL":
-			voiceId = types.VoiceId("Jan")
-		case "pt-BR":
-			voiceId = types.VoiceId("Ricardo")
-		case "pt-PT":
-			voiceId = types.VoiceId("Cristiano")
-		case "ro-RO":
-			voiceId = types.VoiceId("Carmen")
-		case "ru-RU":
-			voiceId = types.VoiceId("Maxim")
-		case "sv-SE":
-			voiceId = types.VoiceId("Mattias")
-		case "tr-TR":
-			voiceId = types.VoiceId("Cem")
-		case "cy-GB":
-			voiceId = types.VoiceId("Gwyneth") // Female only
-		case "zh-CN":
-			voiceId = types.VoiceId("Zhiyu")
-		case "yue-CN":
-			voiceId = types.VoiceId("Hiujin")
-		}
+		log.Printf("Missing VoiceId; defaulting to 'Matthew'")
+		voiceId = types.VoiceId("Matthew")
 	}
 
 	log.Printf("Selected voice ID: %s", voiceId)
