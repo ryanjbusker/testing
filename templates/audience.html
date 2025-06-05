@@ -88,6 +88,14 @@
         <option value="tr">Turkish</option>
         <option value="cy">Welsh</option>
       </select>
+      <select id="playbackSpeed" class="form-control">
+        <option value="0.75">0.75x</option>
+        <option value="0.9">0.9x</option>
+        <option value="1">1.0x</option>
+        <option value="1.1">1.1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+      </select>
       <button id="connectToggleButton" class="button">Connect to Stream</button>
     </div>
   </div>
@@ -194,9 +202,12 @@
 
         const arrayBuffer = await response.arrayBuffer();
         const decodedData = await audioCtx.decodeAudioData(arrayBuffer);
+        const speedSelect = document.getElementById('playbackSpeed');
+        const playbackRate = parseFloat(speedSelect.value);
 
         audioQueue.push({
           buffer: decodedData,
+          playbackRate,
           resolve: () => {}
         });
 
@@ -210,11 +221,12 @@
       if (isPlaying || audioQueue.length === 0) return;
 
       isPlaying = true;
-      const { buffer, resolve } = audioQueue.shift();
-
+    //   const { buffer, resolve } = audioQueue.shift();
+      const { buffer, playbackRate, resolve } = audioQueue.shift();
       const source = audioCtx.createBufferSource();
       source.buffer = buffer;
-      source.playbackRate.value = 1.25;
+    //   source.playbackRate.value = 1.25;
+      source.playbackRate.value = playbackRate;
       source.connect(audioCtx.destination);
 
       source.onended = () => {
