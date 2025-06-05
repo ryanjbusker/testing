@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Speaker Page - Live Translation</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .button-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .button-danger:hover {
+            background-color: #c82333;
+        }
+        .button-group {
+            margin-bottom: 1.5rem;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -72,8 +84,7 @@
             </div>
 
             <div class="button-group">
-                <button id="startButton" class="button" disabled>Start Speaking</button>
-                <button id="stopButton" class="button button-danger" disabled>Stop Speaking</button>
+                <button id="speakButton" class="button" disabled>Start Speaking</button>
             </div>
 
             <div class="form-group">
@@ -98,8 +109,7 @@
         let processor = null;
         let isRecording = false;
         let mediaStream = null;
-        const startButton = document.getElementById('startButton');
-        const stopButton = document.getElementById('stopButton');
+        const startButton = document.getElementById('speakButton');
         const statusDiv = document.getElementById('status');
         const recognizedTextDiv = document.getElementById('recognizedText');
         const sourceLanguage = document.getElementById('sourceLanguage');
@@ -216,8 +226,8 @@
 
         function resetUI() {
             stopRecording();
-            startButton.disabled = false;  // Allow user to start again
-            stopButton.disabled = true;
+            startButton.disabled = false;
+            startButton.textContent = 'Start Speaking';
             recognizedTextDiv.textContent = 'Your speech will appear here...';
             statusDiv.textContent = 'Not connected';
         }
@@ -273,10 +283,9 @@
                 }
                 
                 isRecording = true;
-                startButton.disabled = true;
-                stopButton.disabled = false;
+                startButton.textContent = 'Stop Speaking';
+                startButton.classList.add('button-danger');
                 statusDiv.textContent = 'Speaking...';
-
                 sourceLanguage.disabled = true;
                 
             } catch (error) {
@@ -304,8 +313,8 @@
                 }
                 
                 // Reset UI
-                startButton.disabled = false;
-                stopButton.disabled = true;
+                startButton.textContent = 'Start Speaking';
+                startButton.classList.remove('button-danger');
                 statusDiv.textContent = 'Stopped';
                 sourceLanguage.disabled = false;
 
@@ -335,8 +344,13 @@
             return int16Array;
         }
 
-        startButton.addEventListener('click', startRecording);
-        stopButton.addEventListener('click', stopRecording);
+        startButton.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
         sourceLanguage.addEventListener('change', () => {
             // Reset and reconnect WebSocket when language changes
             if (isRecording) {
