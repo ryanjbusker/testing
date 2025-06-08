@@ -41,6 +41,9 @@ import (
 	"database/sql"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
+
+	"html"
+	"strconv"
 )
 
 var translator *translation.Translator
@@ -104,62 +107,6 @@ type DeepgramCallback struct {
 	DB          *sql.DB // Add database connection
 }
 
-// Message implements the LiveMessageCallback interface for handling message responses
-// func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
-// 	// Skip empty transcripts
-// 	sentence := strings.TrimSpace(mr.Channel.Alternatives[0].Transcript)
-// 	if len(mr.Channel.Alternatives) == 0 || len(sentence) == 0 {
-// 		return nil
-// 	}
-
-// 	// Process the transcription
-// 	log.Printf("[Deepgram] Transcription: %s (Final: %v)", sentence, mr.IsFinal)
-
-// 	if mr.IsFinal {
-// 		// Add to the string builder
-// 		cb.sb.WriteString(sentence)
-// 		cb.sb.WriteString(" ")
-
-// 		// When speech is final, send the complete transcription
-// 		if mr.SpeechFinal {
-// 			completedText := cb.sb.String()
-// 			log.Printf("[Deepgram] Final speech: %s", completedText)
-
-// 			// Send the transcript to the speaker
-// 			speechMsg := map[string]interface{}{
-// 				"type":     "transcription",
-// 				"text":     completedText,
-// 				"language": cb.SourceLang,
-// 			}
-// 			speechJSON, _ := json.Marshal(speechMsg)
-// 			if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, speechJSON); err != nil {
-// 				log.Printf("Failed to send transcription back to speaker: %v", err)
-// 			}
-
-// 			// Process translations for audience members
-// 			cb.processTranslations(completedText)
-
-// 			// Reset the buffer for the next utterance
-// 			cb.sb.Reset()
-// 		}
-// 	} else {
-// 		// For interim results, just log them
-// 		log.Printf("[Deepgram] Interim result: %s", sentence)
-
-// 		// Optionally send interim results to the speaker
-// 		// This would let them see partial transcriptions as they speak
-// 		interimMsg := map[string]interface{}{
-// 			"type":     "interim",
-// 			"text":     sentence,
-// 			"language": cb.SourceLang,
-// 		}
-// 		interimJSON, _ := json.Marshal(interimMsg)
-// 		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, interimJSON); err != nil {
-// 			log.Printf("Failed to send interim transcription to speaker: %v", err)
-// 		}
-// 	}
-// 	return nil
-// }
 func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
 	if len(mr.Channel.Alternatives) == 0 {
 		return nil
@@ -228,35 +175,6 @@ func (cb *DeepgramCallback) SpeechStarted(ssr *msginterfaces.SpeechStartedRespon
 	log.Printf("[Deepgram] Speech started for speaker: %s", cb.SpeakerID)
 	return nil
 }
-
-// UtteranceEnd implements the LiveMessageCallback interface
-// func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse) error {
-// 	utterance := strings.TrimSpace(cb.sb.String())
-// 	if len(utterance) > 0 {
-// 		log.Printf("[Deepgram] Utterance end: %s", utterance)
-
-// 		// Send the final utterance to the speaker
-// 		utteranceMsg := map[string]interface{}{
-// 			"type":     "transcription",
-// 			"text":     utterance,
-// 			"language": cb.SourceLang,
-// 			"final":    true,
-// 		}
-// 		utteranceJSON, _ := json.Marshal(utteranceMsg)
-// 		if err := cb.SpeakerConn.WriteMessage(websocket.TextMessage, utteranceJSON); err != nil {
-// 			log.Printf("Failed to send utterance to speaker: %v", err)
-// 		}
-
-// 		// Process translations for the audience
-// 		cb.processTranslations(utterance)
-
-// 		// Reset the buffer for the next utterance
-// 		cb.sb.Reset()
-// 	} else {
-// 		log.Printf("[Deepgram] Empty utterance end received")
-// 	}
-// 	return nil
-// }
 
 func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse) error {
 	// Get any leftover partial sentence that wasn't sent in Message()
@@ -1800,45 +1718,6 @@ func extractGoogleUserInfo(resp *http.Response) (*GoogleUserInfo, error) {
 	return &userInfo, nil
 }
 
-// var neuralVoiceSupport = map[string]bool{
-// 	"arb":    true, // Arabic
-// 	"ar-AE":  true, // Arabic (Gulf)
-// 	"ca-ES":  true, // Catalan
-// 	"cs-CZ":  true, // Czech
-// 	"da-DK":  true, // Danish
-// 	"de-DE":  true, // German
-// 	"de-AT":  true, // German (Austrian)
-// 	"en-US":  true, // English (US)
-// 	"en-GB":  true, // English (British)
-// 	"en-AU":  true, // English (Australian)
-// 	"en-IN":  true, // English (Indian)
-// 	"en-NZ":  true, // English (New Zealand)
-// 	"en-ZA":  true, // English (South African)
-// 	"es-ES":  true, // Spanish (Spain)
-// 	"es-MX":  true, // Spanish (Mexican)
-// 	"es-US":  true, // Spanish (US)
-// 	"fi-FI":  true, // Finnish
-// 	"fr-FR":  true, // French (France)
-// 	"fr-CA":  true, // French (Canada)
-// 	"hi-IN":  true, // Hindi
-// 	"is-IS":  true, // Icelandic
-// 	"it-IT":  true, // Italian
-// 	"ja-JP":  true, // Japanese
-// 	"ko-KR":  true, // Korean
-// 	"nb-NO":  true, // Norwegian
-// 	"nl-NL":  true, // Dutch
-// 	"pl-PL":  true, // Polish
-// 	"pt-BR":  true, // Portuguese (Brazilian)
-// 	"pt-PT":  true, // Portuguese (European)
-// 	"ro-RO":  true, // Romanian
-// 	"ru-RU":  true, // Russian
-// 	"sv-SE":  true, // Swedish
-// 	"tr-TR":  true, // Turkish
-// 	"zh-CN":  true, // Chinese (Mandarin)
-// 	"yue-CN": true,
-// 	"fr-BE": true,
-// 	"de-CH": true,
-// }
 var voiceSupportsNeural = map[string]bool{
 	"Matthew":   true,
 	"Brian":     true,
@@ -1883,6 +1762,7 @@ func handlePollyTTS(c *gin.Context) {
 		Text     string `json:"text"`
 		Language string `json:"language"`
 		VoiceId  string `json:"voiceId"`
+		Speed    string `json:"speed"`
 	}
 	if err := c.BindJSON(&req); err != nil {
 		log.Printf("Error binding JSON request: %v", err)
@@ -1904,14 +1784,6 @@ func handlePollyTTS(c *gin.Context) {
 
 	log.Printf("Selected voice ID: %s", voiceId)
 
-	// Determine if the language supports neural voices
-	// engine := types.EngineStandard
-	// if neuralVoiceSupport[req.Language] {
-	// 	engine = types.EngineNeural
-	// 	log.Printf("Using neural engine for language: %s", req.Language)
-	// } else {
-	// 	log.Printf("Using standard engine for language: %s (neural not supported)", req.Language)
-	// }
 	engine := types.EngineStandard
 	if voiceSupportsNeural[req.VoiceId] {
 		engine = types.EngineNeural
@@ -1920,13 +1792,34 @@ func handlePollyTTS(c *gin.Context) {
 		log.Printf("Using standard engine for voice: %s (neural not supported)", req.VoiceId)
 	}
 
+	finalText := req.Text
+	isSSML := false
+
+	if req.Speed != "" && req.Speed != "1" {
+		speedFloat, err := strconv.ParseFloat(req.Speed, 64)
+		if err == nil {
+			rate := fmt.Sprintf("%.0f%%", speedFloat*100)
+			finalText = fmt.Sprintf(`<speak><prosody rate="%s">%s</prosody></speak>`, rate, html.EscapeString(req.Text))
+			isSSML = true
+			log.Printf("Text wrapped in SSML with rate=%s: %s", rate, finalText)
+		} else {
+			log.Printf("Invalid speed value %q; using raw text", req.Speed)
+		}
+	}
+
 
 	input := &polly.SynthesizeSpeechInput{
-		Text:         aws.String(req.Text),
+		// Text:         aws.String(req.Text),
+		Text:         aws.String(finalText),
 		OutputFormat: types.OutputFormatMp3,
 		VoiceId:      voiceId,
 		Engine:       engine,
 	}
+
+	if isSSML {
+		input.TextType = types.TextTypeSsml
+	}
+
 
 	log.Printf("Sending request to Polly with input: %+v", input)
 
