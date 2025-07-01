@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Speaker Page - Live Translation</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .button-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .button-danger:hover {
+            background-color: #c82333;
+        }
+        .button-group {
+            margin-bottom: 1.5rem;
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -67,29 +79,47 @@
                 <label for="sourceLanguage">Your Language</label>
                 <select id="sourceLanguage" class="form-control">
                     <option value="en">English</option>
-                    <option value="ar">Arabic</option>
-                    <option value="zh">Chinese (Simplified)</option>
+                    <option value="bg">Bulgarian</option>
+                    <option value="ca">Catalan</option>
+                    <option value="zh">Chinese (Mandarin, Simplified)</option>
+                    <option value="zh-TW">Chinese (Mandarin, Traditional)</option>
+                    <!-- <option value="zh-HK">Chinese (Cantonese, Traditional)</option> -->
+                    <option value="cs">Czech</option>
                     <option value="da">Danish</option>
                     <option value="nl">Dutch</option>
+                    <option value="et">Estonian</option>
+                    <option value="fi">Finnish</option>
+                    <!-- <option value="nl-BE">Flemish</option> -->
                     <option value="fr">French</option>
                     <option value="de">German</option>
+                    <!-- <option value="de-CH">German (Switzerland)</option> -->
+                    <option value="el">Greek</option>
                     <option value="hi">Hindi</option>
+                    <option value="hu">Hungarian</option>
+                    <option value="id">Indonesian</option>
                     <option value="it">Italian</option>
                     <option value="ja">Japanese</option>
                     <option value="ko">Korean</option>
+                    <option value="lv">Latvian</option>
+                    <option value="lt">Lithuanian</option>
+                    <option value="ms">Malay</option>
+                    <option value="no">Norwegian</option>
                     <option value="pl">Polish</option>
                     <option value="pt">Portuguese</option>
                     <option value="ro">Romanian</option>
                     <option value="ru">Russian</option>
+                    <option value="sk">Slovak</option>
                     <option value="es">Spanish</option>
                     <option value="sv">Swedish</option>
+                    <option value="th">Thai</option>
                     <option value="tr">Turkish</option>
+                    <option value="uk">Ukrainian</option>
+                    <option value="vi">Vietnamese</option>
                 </select>
             </div>
 
             <div class="button-group">
-                <button id="startButton" class="button" disabled>Start Speaking</button>
-                <button id="stopButton" class="button button-danger" disabled>Stop Speaking</button>
+                <button id="speakButton" class="button" disabled>Start Speaking</button>
             </div>
 
             <div class="form-group">
@@ -114,8 +144,7 @@
         let processor = null;
         let isRecording = false;
         let mediaStream = null;
-        const startButton = document.getElementById('startButton');
-        const stopButton = document.getElementById('stopButton');
+        const startButton = document.getElementById('speakButton');
         const statusDiv = document.getElementById('status');
         const recognizedTextDiv = document.getElementById('recognizedText');
         const sourceLanguage = document.getElementById('sourceLanguage');
@@ -259,34 +288,17 @@
         });
 
         connectWebSocket();
-        // document.getElementById("speakerId").addEventListener("change", () => {
-        //     // startButton.disabled = true;
-        //     // if (isRecording) stopRecording();
-        //     // connectWebSocket();
-        //     if (isRecording) {
-        //         stopRecording();  // stops + closes audio context
-        //         setTimeout(() => {
-        //             connectWebSocket(); // re-connect after audio context cleaned up
-        //         }, 500);
-        //     } else {
-        //         connectWebSocket();
-        //     }
-        // });
 
         function resetUI() {
             stopRecording();
-            startButton.disabled = false;  // Allow user to start again
-            stopButton.disabled = true;
+            startButton.disabled = false;
+            startButton.textContent = 'Start Speaking';
             recognizedTextDiv.textContent = 'Your speech will appear here...';
             statusDiv.textContent = 'Not connected';
         }
         
         // Start recording and streaming audio
         async function startRecording() {
-            // connectWebSocket();
-            // if (!ws || ws.readyState !== WebSocket.OPEN) {
-            //     connectWebSocket();
-            // }
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 statusDiv.textContent = 'WebSocket not ready';
                 return;
@@ -297,20 +309,6 @@
                     audioContext = new (window.AudioContext || window.webkitAudioContext)({
                         sampleRate: SAMPLE_RATE
                     });
-                    
-                    // Get microphone stream
-                    // const stream = await navigator.mediaDevices.getUserMedia({
-                    //     audio: {
-                    //         channelCount: 1,           // Mono audio
-                    //         echoCancellation: true,    // Enable echo cancellation
-                    //         noiseSuppression: true,    // Enable noise suppression
-                    //         autoGainControl: true      // Enable auto gain control
-                    //     }
-                    // });
-                    
-                    // Create microphone source
-                    // microphone = audioContext.createMediaStreamSource(stream);
-                    // microphone = audioContext.createMediaStreamSource(mediaStream);
 
                     mediaStream = await navigator.mediaDevices.getUserMedia({
                         audio: {
@@ -350,10 +348,9 @@
                 }
                 
                 isRecording = true;
-                startButton.disabled = true;
-                stopButton.disabled = false;
+                startButton.textContent = 'Stop Speaking';
+                startButton.classList.add('button-danger');
                 statusDiv.textContent = 'Speaking...';
-
                 sourceLanguage.disabled = true;
                 
             } catch (error) {
@@ -381,8 +378,8 @@
                 }
                 
                 // Reset UI
-                startButton.disabled = false;
-                stopButton.disabled = true;
+                startButton.textContent = 'Start Speaking';
+                startButton.classList.remove('button-danger');
                 statusDiv.textContent = 'Stopped';
                 sourceLanguage.disabled = false;
 
@@ -412,8 +409,13 @@
             return int16Array;
         }
 
-        startButton.addEventListener('click', startRecording);
-        stopButton.addEventListener('click', stopRecording);
+        startButton.addEventListener('click', () => {
+            if (!isRecording) {
+                startRecording();
+            } else {
+                stopRecording();
+            }
+        });
         sourceLanguage.addEventListener('change', () => {
             // Reset and reconnect WebSocket when language changes
             if (isRecording) {
