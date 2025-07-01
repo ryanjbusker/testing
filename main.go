@@ -41,6 +41,9 @@ import (
 	"database/sql"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
+
+	"github.com/stripe/stripe-go/v78"
+	"github.com/stripe/stripe-go/v78/subscription"
 )
 
 var translator *translation.Translator
@@ -79,10 +82,20 @@ type Stream struct {
 }
 
 type Speaker struct {
+	ID                int
+	GoogleID          string
+	Email             string
+	Name              string
+	SpeakerCode       string
+	CreatedAt         time.Time
+	PaymentStatus     string
+	SubscriptionID    string
+	StripeCustomerID  string
+	PlanName          string
 	Conn              *websocket.Conn
 	Language          string
 	LastActive        time.Time
-	DeepgramClient    *dgclient.WSCallback // Add Deepgram client for each speaker
+	DeepgramClient    *dgclient.WSCallback
 	DeepgramCtx       context.Context
 	DeepgramCancelCtx context.CancelFunc
 }
@@ -321,6 +334,19 @@ func init() {
 		log.Println("Warning: .env file not found")
 	}
 
+	// Initialize Stripe
+	stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+
+	// Log Stripe configuration status
+	log.Printf("Stripe Secret Key configured: %v", stripe.Key != "")
+	log.Printf("Stripe Publishable Key configured: %v", os.Getenv("STRIPE_PUBLISHABLE_KEY") != "")
+	log.Printf("Stripe Monthly 5h Price ID configured: %v", os.Getenv("STRIPE_MONTHLY_5_PRICE_ID") != "")
+	log.Printf("Stripe Monthly 8h Price ID configured: %v", os.Getenv("STRIPE_MONTHLY_8_PRICE_ID") != "")
+	log.Printf("Stripe Monthly 13h Price ID configured: %v", os.Getenv("STRIPE_MONTHLY_13_PRICE_ID") != "")
+	log.Printf("Stripe Yearly 50h Price ID configured: %v", os.Getenv("STRIPE_YEARLY_50_PRICE_ID") != "")
+	log.Printf("Stripe Yearly 100h Price ID configured: %v", os.Getenv("STRIPE_YEARLY_100_PRICE_ID") != "")
+	log.Printf("Stripe Yearly 150h Price ID configured: %v", os.Getenv("STRIPE_YEARLY_150_PRICE_ID") != "")
+
 	key := os.Getenv("SESSION_KEY")
 	if key == "" {
 		log.Fatal("SESSION_KEY is empty or not set in .env")
@@ -437,81 +463,6 @@ func authMiddleware(db *sql.DB) gin.HandlerFunc {
 		log.Printf("Auth middleware: Authentication successful")
 		c.Next()
 	}
-}
-
-// UserInfo represents additional user information
-type UserInfo struct {
-	ID                int       `json:"id"`
-	SpeakerID         int       `json:"speaker_id"`
-	PreferredLanguage string    `json:"preferred_language"`
-	Timezone          string    `json:"timezone"`
-	NotificationPrefs string    `json:"notification_preferences"`
-	LastLogin         time.Time `json:"last_login"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-}
-
-// GetUserInfo retrieves user information for a given speaker ID
-func GetUserInfo(db *sql.DB, speakerID int) (*UserInfo, error) {
-	var userInfo UserInfo
-	err := db.QueryRow(`
-		SELECT id, speaker_id, preferred_language, timezone, 
-			   notification_preferences, last_login, created_at, updated_at
-		FROM user_info
-		WHERE speaker_id = $1
-	`, speakerID).Scan(
-		&userInfo.ID,
-		&userInfo.SpeakerID,
-		&userInfo.PreferredLanguage,
-		&userInfo.Timezone,
-		&userInfo.NotificationPrefs,
-		&userInfo.LastLogin,
-		&userInfo.CreatedAt,
-		&userInfo.UpdatedAt,
-	)
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &userInfo, nil
-}
-
-// CreateUserInfo creates a new user information record
-func CreateUserInfo(db *sql.DB, userInfo *UserInfo) error {
-	_, err := db.Exec(`
-		INSERT INTO user_info (
-			speaker_id, preferred_language, timezone, 
-			notification_preferences, last_login
-		) VALUES ($1, $2, $3, $4, $5)
-	`,
-		userInfo.SpeakerID,
-		userInfo.PreferredLanguage,
-		userInfo.Timezone,
-		userInfo.NotificationPrefs,
-		time.Now(),
-	)
-	return err
-}
-
-// UpdateUserInfo updates existing user information
-func UpdateUserInfo(db *sql.DB, userInfo *UserInfo) error {
-	_, err := db.Exec(`
-		UPDATE user_info
-		SET preferred_language = $1,
-			timezone = $2,
-			notification_preferences = $3,
-			last_login = $4
-		WHERE speaker_id = $5
-	`,
-		userInfo.PreferredLanguage,
-		userInfo.Timezone,
-		userInfo.NotificationPrefs,
-		time.Now(),
-		userInfo.SpeakerID,
-	)
-	return err
 }
 
 // SpeakingSession represents a speaking session record
@@ -636,6 +587,24 @@ func AddTranslatedLanguage(db *sql.DB, sessionID int, language string) error {
 	return nil
 }
 
+// ReportUsageToStripe reports the usage to Stripe based on speaking sessions
+func ReportUsageToStripe(db *sql.DB, speakerID string) error {
+	paymentService := NewPaymentService(db)
+	return paymentService.ReportUsageToStripe(speakerID)
+}
+
+// Add function to create metered subscription
+func createMeteredSubscription(db *sql.DB, speaker *Speaker) error {
+	paymentService := NewPaymentService(db)
+	return paymentService.CreateMeteredSubscription(speaker)
+}
+
+// Add a function to update speaker's subscription
+func updateSpeakerSubscription(db *sql.DB, speakerID string, subscriptionID string) error {
+	_, err := db.Exec("UPDATE speakers SET subscription_id = $1 WHERE google_id = $2", subscriptionID, speakerID)
+	return err
+}
+
 func main() {
 	router := gin.Default()
 
@@ -692,7 +661,9 @@ func main() {
         speaker_code TEXT UNIQUE NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         payment_status TEXT,
-        subscription_id TEXT
+        subscription_id TEXT,
+        stripe_customer_id TEXT,
+        plan_name TEXT
     );
     `
 	_, err = db.Exec(createTableSQL)
@@ -701,6 +672,7 @@ func main() {
 	}
 
 	log.Println("Speakers table created successfully.")
+
 	///////////////////////////
 	// Serve static files from the static directory
 	router.Static("/static", "./static")
@@ -881,35 +853,7 @@ func main() {
 		// Redirect to the original destination
 		c.Redirect(http.StatusSeeOther, redirectTo)
 
-		// After successful authentication and user creation/update
-		var speakerID int
-		err = db.QueryRow("SELECT id FROM speakers WHERE google_id = $1", userInfo.Sub).Scan(&speakerID)
-		if err != nil {
-			log.Printf("Error getting speaker ID: %v", err)
-		} else {
-			// Check if user info exists
-			existingUserInfo, err := GetUserInfo(db, speakerID)
-			if err != nil {
-				log.Printf("Error checking user info: %v", err)
-			} else if existingUserInfo == nil {
-				// Create new user info
-				newUserInfo := &UserInfo{
-					SpeakerID:         speakerID,
-					PreferredLanguage: "en-US", // Default language
-					Timezone:          "UTC",   // Default timezone
-					NotificationPrefs: "{}",    // Default empty preferences
-				}
-				if err := CreateUserInfo(db, newUserInfo); err != nil {
-					log.Printf("Error creating user info: %v", err)
-				}
-			} else {
-				// Update last login
-				existingUserInfo.LastLogin = time.Now()
-				if err := UpdateUserInfo(db, existingUserInfo); err != nil {
-					log.Printf("Error updating user info: %v", err)
-				}
-			}
-		}
+		// Note: User info tracking removed - not needed for current functionality
 	})
 
 	router.GET("/logout", func(c *gin.Context) {
@@ -952,10 +896,106 @@ func main() {
 		})
 	})
 
+	// Add account details endpoint
+	router.GET("/account-details", authMiddleware(db), func(c *gin.Context) {
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		var accountDetails struct {
+			PaymentStatus    string    `json:"payment_status"`
+			SubscriptionID   string    `json:"subscription_id"`
+			StripeCustomerID string    `json:"stripe_customer_id"`
+			PlanName         string    `json:"plan_name"`
+			CreatedAt        time.Time `json:"created_at"`
+		}
+
+		err := db.QueryRow(`
+			SELECT payment_status, subscription_id, stripe_customer_id, plan_name, created_at
+			FROM speakers 
+			WHERE google_id = $1
+		`, googleSub).Scan(&accountDetails.PaymentStatus, &accountDetails.SubscriptionID, &accountDetails.StripeCustomerID, &accountDetails.PlanName, &accountDetails.CreatedAt)
+
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Speaker not found"})
+				return
+			}
+			log.Printf("Database error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		// Determine subscription plan based on stored plan name and payment status
+		var subscriptionPlan string
+		var nextBilling string
+		var planDetails string
+
+		if accountDetails.PaymentStatus == "active" && accountDetails.PlanName != "" {
+			// Use the stored plan name to determine the display name and details
+			switch accountDetails.PlanName {
+			case "monthly-5":
+				subscriptionPlan = "Starter Monthly"
+				planDetails = "5 hours/month - $350/month"
+			case "monthly-8":
+				subscriptionPlan = "Professional Monthly"
+				planDetails = "8 hours/month - $480/month"
+			case "yearly-5":
+				subscriptionPlan = "Starter Yearly"
+				planDetails = "5 hours/month - $3,500/year"
+			case "yearly-8":
+				subscriptionPlan = "Professional Yearly"
+				planDetails = "8 hours/month - $4,800/year"
+			default:
+				subscriptionPlan = "Active Subscription"
+				planDetails = "Custom Plan"
+			}
+
+			// Fetch next billing date from Stripe if subscription ID exists
+			if accountDetails.SubscriptionID != "" {
+				stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+				sub, err := subscription.Get(accountDetails.SubscriptionID, nil)
+				if err != nil {
+					log.Printf("Error fetching Stripe subscription: %v", err)
+					nextBilling = "Unable to fetch billing date"
+				} else {
+					// Convert Unix timestamp to readable date
+					nextBillingTime := time.Unix(sub.CurrentPeriodEnd, 0)
+					nextBilling = nextBillingTime.Format("January 2, 2006")
+				}
+			} else {
+				nextBilling = "Next billing cycle"
+			}
+		} else if accountDetails.PaymentStatus == "active" {
+			subscriptionPlan = "Free Plan"
+			planDetails = "Limited access"
+			nextBilling = "N/A"
+		} else {
+			subscriptionPlan = "Inactive"
+			planDetails = "No active subscription"
+			nextBilling = "N/A"
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"payment_status":     accountDetails.PaymentStatus,
+			"subscription_id":    accountDetails.SubscriptionID,
+			"stripe_customer_id": accountDetails.StripeCustomerID,
+			"created_at":         accountDetails.CreatedAt.Format("2006-01-02 15:04:05"),
+			"subscription_plan":  subscriptionPlan,
+			"plan_details":       planDetails,
+			"next_billing":       nextBilling,
+			"last_login":         time.Now().Format("2006-01-02 15:04:05"), // You can enhance this with actual last login tracking
+		})
+	})
+
 	router.GET("/session", func(c *gin.Context) {
 		session, _ := store.Get(c.Request, "session-name")
 		email := session.Values["email"]
-		c.JSON(http.StatusOK, gin.H{"email": email})
+		name := session.Values["name"]
+		c.JSON(http.StatusOK, gin.H{"email": email, "name": name})
 	})
 
 	// Add Polly TTS endpoint
@@ -1104,60 +1144,6 @@ func main() {
 	})
 
 	// Add new endpoint to get user info
-	router.GET("/user-info", authMiddleware(db), func(c *gin.Context) {
-		session, _ := store.Get(c.Request, "session-name")
-		googleSub, ok := session.Values["google_sub"].(string)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
-			return
-		}
-
-		var speakerID int
-		err := db.QueryRow("SELECT id FROM speakers WHERE google_id = $1", googleSub).Scan(&speakerID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get speaker ID"})
-			return
-		}
-
-		userInfo, err := GetUserInfo(db, speakerID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info"})
-			return
-		}
-
-		c.JSON(http.StatusOK, userInfo)
-	})
-
-	// Add new endpoint to update user info
-	router.POST("/user-info", authMiddleware(db), func(c *gin.Context) {
-		session, _ := store.Get(c.Request, "session-name")
-		googleSub, ok := session.Values["google_sub"].(string)
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
-			return
-		}
-
-		var speakerID int
-		err := db.QueryRow("SELECT id FROM speakers WHERE google_id = $1", googleSub).Scan(&speakerID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get speaker ID"})
-			return
-		}
-
-		var userInfo UserInfo
-		if err := c.BindJSON(&userInfo); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
-			return
-		}
-
-		userInfo.SpeakerID = speakerID
-		if err := UpdateUserInfo(db, &userInfo); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user info"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"message": "User info updated successfully"})
-	})
 
 	// Add new endpoint to get speaker usage statistics
 	router.GET("/speaker-usage", authMiddleware(db), func(c *gin.Context) {
@@ -1216,11 +1202,224 @@ func main() {
 		})
 	})
 
-	// Add route for usage statistics page
-	router.GET("/usage", authMiddleware(db), func(c *gin.Context) {
-		c.HTML(http.StatusOK, "usage.html", gin.H{
-			"title": "Usage Statistics",
+	// Add route for join page - requires Google OAuth but not necessarily speaker status
+	router.GET("/join", func(c *gin.Context) {
+		// Check if user is authenticated with Google OAuth
+		session, err := store.Get(c.Request, "session-name")
+		if err != nil {
+			c.Redirect(http.StatusSeeOther, "/login?from=/join")
+			return
+		}
+
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.Redirect(http.StatusSeeOther, "/login?from=/join")
+			return
+		}
+
+		// Check if user is already a speaker
+		var exists bool
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = $1)", googleSub).Scan(&exists)
+		if err != nil {
+			log.Printf("Error checking speaker status: %v", err)
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{
+				"error": "Database error occurred",
+			})
+			return
+		}
+
+		if exists {
+			// User is already a speaker, redirect to speaker page
+			c.Redirect(http.StatusSeeOther, "/speaker")
+			return
+		}
+
+		// User is authenticated but not a speaker - show join page
+		c.HTML(http.StatusOK, "join.html", gin.H{
+			"title":                "Join BMM Translation",
+			"StripePublishableKey": os.Getenv("STRIPE_PUBLISHABLE_KEY"),
 		})
+	})
+
+	// Handle join form submission
+	router.POST("/join", func(c *gin.Context) {
+		// Get the authenticated user's Google ID
+		session, sessionErr := store.Get(c.Request, "session-name")
+		if sessionErr != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		// Log the Google sub ID and session data for debugging
+		log.Printf("Join request - Google Sub ID: %s", googleSub)
+		log.Printf("Session values: %+v", session.Values)
+
+		// Get the email from session for comparison
+		sessionEmail, _ := session.Values["email"].(string)
+		log.Printf("Session email: %s", sessionEmail)
+
+		var joinRequest struct {
+			Name              string `json:"name"`
+			Email             string `json:"email"`
+			PreferredLanguage string `json:"preferred_language"`
+			Plan              string `json:"plan"`
+			PaymentMethodID   string `json:"payment_method_id"`
+		}
+
+		if err := c.BindJSON(&joinRequest); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request data"})
+			return
+		}
+
+		// Log the join request data for debugging
+		log.Printf("Join request data: %+v", joinRequest)
+
+		// Compare session email with submitted email
+		if sessionEmail != "" && sessionEmail != joinRequest.Email {
+			log.Printf("WARNING: Email mismatch! Session email: %s, Submitted email: %s", sessionEmail, joinRequest.Email)
+		}
+
+		// Validate required fields
+		if joinRequest.Name == "" || joinRequest.Email == "" || joinRequest.PreferredLanguage == "" || joinRequest.Plan == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "All fields are required"})
+			return
+		}
+
+		// Check if user already exists as a speaker
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE google_id = $1)", googleSub).Scan(&exists)
+		if err != nil {
+			log.Printf("Error checking existing speaker: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		log.Printf("Checking if user exists: google_id=%s, exists=%v", googleSub, exists)
+
+		if exists {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "You are already registered as a speaker"})
+			return
+		}
+
+		// Check if email is already registered
+		var emailExists bool
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE email = $1)", joinRequest.Email).Scan(&emailExists)
+		if err != nil {
+			log.Printf("Error checking existing email: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		log.Printf("Checking if email exists: email=%s, exists=%v", joinRequest.Email, emailExists)
+
+		if emailExists {
+			// Check if the email belongs to a different Google account
+			var existingGoogleID string
+			err = db.QueryRow("SELECT google_id FROM speakers WHERE email = $1", joinRequest.Email).Scan(&existingGoogleID)
+			if err != nil {
+				log.Printf("Error getting existing google_id for email: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+				return
+			}
+
+			if existingGoogleID != googleSub {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "This email address is already registered with a different Google account"})
+				return
+			} else {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "You are already registered as a speaker with this email"})
+				return
+			}
+		}
+
+		// Generate unique 5-digit speaker code
+		speakerCode, err := generateUniqueSpeakerCode(db)
+		if err != nil {
+			log.Printf("Error generating speaker code: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate speaker code"})
+			return
+		}
+		log.Printf("Generated speaker code: %s", speakerCode)
+
+		// Create speaker record with Google ID
+		var speakerID int
+		log.Printf("Attempting to insert speaker: google_id=%s, name=%s, email=%s, speaker_code=%s",
+			googleSub, joinRequest.Name, joinRequest.Email, speakerCode)
+
+		err = db.QueryRow(`
+			INSERT INTO speakers (google_id, name, email, speaker_code, payment_status, created_at)
+			VALUES ($1, $2, $3, $4, 'pending', CURRENT_TIMESTAMP)
+			RETURNING id
+		`, googleSub, joinRequest.Name, joinRequest.Email, speakerCode).Scan(&speakerID)
+
+		if err != nil {
+			log.Printf("Error creating speaker: %v", err)
+			log.Printf("Attempted to insert: google_id=%s, name=%s, email=%s, speaker_code=%s",
+				googleSub, joinRequest.Name, joinRequest.Email, speakerCode)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create speaker account"})
+			return
+		}
+
+		log.Printf("Successfully created speaker with ID: %d", speakerID)
+
+		// Note: Preferred language is stored in the join request but not currently used
+		// Could be added to speakers table later if needed
+		log.Printf("User selected preferred language: %s", joinRequest.PreferredLanguage)
+
+		// Create Stripe customer and subscription
+		speaker := &Speaker{
+			ID:            speakerID,
+			GoogleID:      googleSub,
+			Email:         joinRequest.Email,
+			Name:          joinRequest.Name,
+			SpeakerCode:   speakerCode,
+			PaymentStatus: "pending",
+		}
+
+		paymentService := NewPaymentService(db)
+		if err := paymentService.CreateStripeCustomer(speaker); err != nil {
+			log.Printf("Error creating Stripe customer: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create payment account"})
+			return
+		}
+
+		// Create subscription based on selected plan
+		subscriptionErr := createSubscriptionForPlan(db, speaker, joinRequest.Plan, joinRequest.PaymentMethodID)
+		if subscriptionErr != nil {
+			log.Printf("Error creating subscription: %v", subscriptionErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create subscription"})
+			return
+		}
+
+		// Check if subscription was created or skipped
+		var paymentStatus string
+		err = db.QueryRow("SELECT payment_status FROM speakers WHERE id = $1", speakerID).Scan(&paymentStatus)
+		if err != nil {
+			log.Printf("Error checking payment status: %v", err)
+		}
+
+		message := "Account created successfully"
+		if paymentStatus == "pending_subscription" {
+			message = "Account created successfully! Note: Subscription setup requires Stripe price IDs to be configured."
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"message":      message,
+			"speaker_code": speakerCode,
+		})
+	})
+
+	// Initialize payment service
+	paymentService := NewPaymentService(db)
+
+	// Add Stripe webhook endpoint
+	router.POST("/webhook", func(c *gin.Context) {
+		paymentService.HandleStripeWebhook(c.Writer, c.Request)
 	})
 
 	// Get port from environment variable or use default
@@ -1463,13 +1662,43 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 			return
 		}
 
+		// Create subscription if needed
 		speaker := &Speaker{
+			ID:                dbSpeakerID,
+			GoogleID:          googleSub,
+			Email:             "", // Will be updated from database
+			Name:              speakerName,
+			SpeakerCode:       speakerCode,
+			CreatedAt:         time.Now(),
+			PaymentStatus:     "active",
+			SubscriptionID:    "",
+			StripeCustomerID:  "",
 			Conn:              conn,
 			Language:          lang,
 			LastActive:        time.Now(),
 			DeepgramClient:    deepgramClient,
 			DeepgramCtx:       ctx,
 			DeepgramCancelCtx: cancel,
+		}
+
+		// Get speaker's email from database
+		err = db.QueryRow("SELECT email FROM speakers WHERE id = $1", dbSpeakerID).Scan(&speaker.Email)
+		if err != nil {
+			log.Printf("Error getting speaker email: %v", err)
+		}
+
+		// Check if speaker already has a subscription
+		var existingSubscriptionID string
+		err = db.QueryRow("SELECT subscription_id FROM speakers WHERE id = $1", dbSpeakerID).Scan(&existingSubscriptionID)
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("Error checking existing subscription: %v", err)
+		}
+
+		// Create subscription only if one doesn't exist
+		if existingSubscriptionID == "" {
+			if err := createMeteredSubscription(db, speaker); err != nil {
+				log.Printf("Error creating subscription: %v", err)
+			}
 		}
 
 		currentStream.Speakers[speakerID] = speaker
@@ -1498,6 +1727,11 @@ func handleWebSocket(c *gin.Context, db *sql.DB) {
 			// End the speaking session when the speaker disconnects
 			if err := EndSpeakingSession(db, sessionID); err != nil {
 				log.Printf("Error ending speaking session: %v", err)
+			}
+
+			// Report usage to Stripe
+			if err := ReportUsageToStripe(db, googleSub); err != nil {
+				log.Printf("Error reporting usage to Stripe: %v", err)
 			}
 
 			deepgramClient.Stop()
@@ -1837,4 +2071,104 @@ func handlePollyTTS(c *gin.Context) {
 
 	log.Printf("Successfully streamed audio to client")
 	log.Println("=== POLLY TTS ENDPOINT COMPLETED ===")
+}
+
+// generateUniqueSpeakerCode generates a unique 5-digit speaker code
+func generateUniqueSpeakerCode(db *sql.DB) (string, error) {
+	maxAttempts := 100
+	for i := 0; i < maxAttempts; i++ {
+		// Generate a random 5-digit number
+		code := fmt.Sprintf("%05d", time.Now().UnixNano()%100000)
+
+		// Check if code already exists
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM speakers WHERE speaker_code = $1)", code).Scan(&exists)
+		if err != nil {
+			return "", err
+		}
+
+		if !exists {
+			return code, nil
+		}
+
+		// Small delay to ensure different timestamps
+		time.Sleep(time.Millisecond)
+	}
+
+	return "", fmt.Errorf("failed to generate unique speaker code after %d attempts", maxAttempts)
+}
+
+// createSubscriptionForPlan creates a subscription based on the selected plan
+func createSubscriptionForPlan(db *sql.DB, speaker *Speaker, plan, paymentMethodID string) error {
+	// Get the appropriate price ID based on the plan
+	var priceID string
+	switch plan {
+	case "monthly-5":
+		priceID = os.Getenv("STRIPE_MONTHLY_5_PRICE_ID")
+	case "monthly-8":
+		priceID = os.Getenv("STRIPE_MONTHLY_8_PRICE_ID")
+	case "monthly-13":
+		priceID = os.Getenv("STRIPE_MONTHLY_13_PRICE_ID")
+	case "yearly-50":
+		priceID = os.Getenv("STRIPE_YEARLY_50_PRICE_ID")
+	case "yearly-100":
+		priceID = os.Getenv("STRIPE_YEARLY_100_PRICE_ID")
+	case "yearly-150":
+		priceID = os.Getenv("STRIPE_YEARLY_150_PRICE_ID")
+	default:
+		return fmt.Errorf("invalid plan: %s", plan)
+	}
+
+	if priceID == "" {
+		log.Printf("Warning: Price ID not set for plan: %s, skipping subscription creation", plan)
+		// Update speaker status to indicate no subscription
+		_, err := db.Exec(`
+			UPDATE speakers 
+			SET payment_status = 'pending_subscription'
+			WHERE id = $1
+		`, speaker.ID)
+		if err != nil {
+			return fmt.Errorf("error updating speaker status: %v", err)
+		}
+		return nil // Don't fail the registration, just skip subscription
+	}
+
+	// Create the subscription using Stripe
+	params := &stripe.SubscriptionParams{
+		Customer: stripe.String(speaker.StripeCustomerID),
+		Items: []*stripe.SubscriptionItemsParams{
+			{
+				Price: stripe.String(priceID),
+			},
+		},
+		PaymentBehavior: stripe.String("default_incomplete"),
+		PaymentSettings: &stripe.SubscriptionPaymentSettingsParams{
+			PaymentMethodTypes: []*string{
+				stripe.String("card"),
+			},
+		},
+		Expand: []*string{
+			stripe.String("latest_invoice.payment_intent"),
+		},
+	}
+
+	subscription, err := subscription.New(params)
+	if err != nil {
+		return fmt.Errorf("error creating subscription: %v", err)
+	}
+
+	// Update speaker with subscription ID and plan name
+	_, err = db.Exec(`
+		UPDATE speakers 
+		SET subscription_id = $1, payment_status = 'active', plan_name = $2
+		WHERE id = $3
+	`, subscription.ID, plan, speaker.ID)
+	if err != nil {
+		return fmt.Errorf("error updating speaker with subscription ID: %v", err)
+	}
+
+	speaker.SubscriptionID = subscription.ID
+	speaker.PaymentStatus = "active"
+
+	return nil
 }

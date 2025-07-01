@@ -161,7 +161,37 @@
                                 <div class="info-group mb-3">
                                     <h4>Subscription</h4>
                                     <p><strong>Plan:</strong> <span id="subscription-plan">Loading...</span></p>
+                                    <p><strong>Details:</strong> <span id="plan-details">Loading...</span></p>
                                     <p><strong>Next Billing Date:</strong> <span id="next-billing">Loading...</span></p>
+                                </div>
+                                <div class="info-group mb-3">
+                                    <h4>Speaker Code</h4>
+                                    <p><strong>Your Code:</strong> <span id="speaker-code" style="font-size: 1.2rem; font-weight: bold; color: #007bff;">Loading...</span></p>
+                                    <p style="font-size: 0.9rem; color: #666;">Share this code with your audience to let them join your stream</p>
+                                    <button id="copy-speaker-code" class="btn btn-outline-primary btn-sm">Copy Code</button>
+                                </div>
+                                <div class="info-group mb-3">
+                                    <h4>QR Code for Audience</h4>
+                                    <div id="qr-code-container" style="text-align: center; margin: 1rem 0;">
+                                        <div id="qr-code" style="display: inline-block; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; background: white;">
+                                            <p style="color: #666; margin: 0;">QR Code will appear here</p>
+                                        </div>
+                                    </div>
+                                    <p style="font-size: 0.9rem; color: #666; text-align: center;">Scan this QR code to join your audience page</p>
+                                    <div style="text-align: center; margin-top: 1rem;">
+                                        <button id="copy-qr-url" class="btn btn-outline-secondary btn-sm">Copy QR Code URL</button>
+                                    </div>
+                                </div>
+                                <div class="info-group mb-3">
+                                    <h4>Audience Page Link</h4>
+                                    <div style="background: #f8f9fa; padding: 1rem; border-radius: 6px; margin: 1rem 0;">
+                                        <p style="margin: 0; word-break: break-all; font-family: monospace; font-size: 0.9rem; color: #495057;" id="audience-link">Loading...</p>
+                                    </div>
+                                    <p style="font-size: 0.9rem; color: #666; text-align: center;">Share this link with your audience</p>
+                                    <div style="text-align: center; margin-top: 1rem;">
+                                        <button id="copy-audience-link" class="btn btn-outline-primary btn-sm">Copy Link</button>
+                                        <a id="open-audience-link" href="#" target="_blank" class="btn btn-outline-success btn-sm" style="margin-left: 0.5rem;">Open Link</a>
+                                    </div>
                                 </div>
                                 <div class="info-group"></div>
                             </div>
@@ -179,12 +209,14 @@
                     .then(data => {
                         document.getElementById('last-login').textContent = data.last_login || 'N/A';
                         document.getElementById('subscription-plan').textContent = data.subscription_plan || 'Free';
+                        document.getElementById('plan-details').textContent = data.plan_details || 'N/A';
                         document.getElementById('next-billing').textContent = data.next_billing || 'N/A';
                     })
                     .catch(error => {
                         console.error('Error fetching account details:', error);
                         document.getElementById('last-login').textContent = 'Error loading';
                         document.getElementById('subscription-plan').textContent = 'Error loading';
+                        document.getElementById('plan-details').textContent = 'Error loading';
                         document.getElementById('next-billing').textContent = 'Error loading';
                     });
 
@@ -201,6 +233,47 @@
                     .catch(error => {
                         console.error('Error fetching usage stats:', error);
                     });
+
+                    // Fetch speaker code
+                    fetch('/get-speaker-code', {
+                        credentials: 'include'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.speaker_code) {
+                            document.getElementById('speaker-code').textContent = data.speaker_code;
+                            // Generate QR code for the speaker code
+                            generateQRCode(data.speaker_code);
+                        } else {
+                            document.getElementById('speaker-code').textContent = 'Not available';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching speaker code:', error);
+                        document.getElementById('speaker-code').textContent = 'Error loading';
+                    });
+
+                    // Copy speaker code functionality
+                    document.getElementById('copy-speaker-code').addEventListener('click', async () => {
+                        const speakerCode = document.getElementById('speaker-code').textContent;
+                        if (speakerCode && speakerCode !== 'Loading...' && speakerCode !== 'Not available' && speakerCode !== 'Error loading') {
+                            try {
+                                await navigator.clipboard.writeText(speakerCode);
+                                const btn = document.getElementById('copy-speaker-code');
+                                btn.textContent = 'Copied!';
+                                setTimeout(() => {
+                                    btn.textContent = 'Copy Code';
+                                }, 2000);
+                            } catch (err) {
+                                console.error('Failed to copy: ', err);
+                                const btn = document.getElementById('copy-speaker-code');
+                                btn.textContent = 'Copy Failed';
+                                setTimeout(() => {
+                                    btn.textContent = 'Copy Code';
+                                }, 2000);
+                            }
+                        }
+                                        });
                 }
             })
             .catch(err => {
@@ -212,6 +285,82 @@
                     </div>
                 `;
             });
+
+        // Function to generate QR code
+        function generateQRCode(speakerCode) {
+            const audienceUrl = `${window.location.origin}/audience/${speakerCode}`;
+            const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(audienceUrl)}`;
+            
+            const qrCodeContainer = document.getElementById('qr-code');
+            qrCodeContainer.innerHTML = `<img src="${qrCodeUrl}" alt="QR Code" style="max-width: 200px; height: auto;">`;
+            
+            // Store the audience URL for copying
+            qrCodeContainer.dataset.audienceUrl = audienceUrl;
+            
+            // Update audience link display
+            const audienceLinkElement = document.getElementById('audience-link');
+            const openAudienceLink = document.getElementById('open-audience-link');
+            if (audienceLinkElement) {
+                audienceLinkElement.textContent = audienceUrl;
+            }
+            if (openAudienceLink) {
+                openAudienceLink.href = audienceUrl;
+            }
+            
+            // Add copy QR URL functionality
+            const copyQrBtn = document.getElementById('copy-qr-url');
+            if (copyQrBtn) {
+                copyQrBtn.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(audienceUrl);
+                        copyQrBtn.textContent = 'Copied!';
+                        copyQrBtn.style.background = '#28a745';
+                        copyQrBtn.style.borderColor = '#28a745';
+                        copyQrBtn.style.color = 'white';
+                        
+                        setTimeout(() => {
+                            copyQrBtn.textContent = 'Copy QR Code URL';
+                            copyQrBtn.style.background = '';
+                            copyQrBtn.style.borderColor = '';
+                            copyQrBtn.style.color = '';
+                        }, 2000);
+                    } catch (err) {
+                        console.error('Failed to copy QR URL: ', err);
+                        copyQrBtn.textContent = 'Copy Failed';
+                        setTimeout(() => {
+                            copyQrBtn.textContent = 'Copy QR Code URL';
+                        }, 2000);
+                    }
+                });
+            }
+            
+            // Add copy audience link functionality
+            const copyAudienceLinkBtn = document.getElementById('copy-audience-link');
+            if (copyAudienceLinkBtn) {
+                copyAudienceLinkBtn.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(audienceUrl);
+                        copyAudienceLinkBtn.textContent = 'Copied!';
+                        copyAudienceLinkBtn.style.background = '#28a745';
+                        copyAudienceLinkBtn.style.borderColor = '#28a745';
+                        copyAudienceLinkBtn.style.color = 'white';
+                        
+                        setTimeout(() => {
+                            copyAudienceLinkBtn.textContent = 'Copy Link';
+                            copyAudienceLinkBtn.style.background = '';
+                            copyAudienceLinkBtn.style.borderColor = '';
+                            copyAudienceLinkBtn.style.color = '';
+                        }, 2000);
+                    } catch (err) {
+                        console.error('Failed to copy audience link: ', err);
+                        copyAudienceLinkBtn.textContent = 'Copy Failed';
+                        setTimeout(() => {
+                            copyAudienceLinkBtn.textContent = 'Copy Link';
+                        }, 2000);
+                    }
+                });
+            }
+        }
     </script>
 </body>
 </html>

@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Join BMM Translation - Become a Speaker</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        .join-container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .join-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .join-header h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .join-header p {
+            color: #666;
+            font-size: 1.1rem;
+        }
+
+        .form-section {
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+
+        .form-section h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 0.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        .speaker-code-display {
+            background: #e8f4fd;
+            border: 2px solid #007bff;
+            border-radius: 4px;
+            padding: 1rem;
+            text-align: center;
+            margin-bottom: 1rem;
+        }
+
+        .speaker-code {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #007bff;
+            letter-spacing: 0.5rem;
+        }
+
+        .plan-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .plan-option {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .plan-option:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+        }
+
+        .plan-option.selected {
+            border-color: #007bff;
+            background: #e8f4fd;
+            box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .plan-option.selected::before {
+            content: "✓";
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #007bff;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .plan-name {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .plan-price {
+            font-size: 1.5rem;
+            color: #007bff;
+            margin-bottom: 0.5rem;
+        }
+
+        .plan-description {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .payment-section {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+        }
+
+        #card-element {
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+        }
+
+        #card-errors {
+            color: #dc3545;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .submit-button {
+            width: 100%;
+            padding: 1rem;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .submit-button:hover {
+            background: #0056b3;
+        }
+
+        .submit-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Success Modal Styles */
+        .success-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .success-modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 2rem;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .success-icon {
+            font-size: 4rem;
+            color: #28a745;
+            margin-bottom: 1rem;
+        }
+
+        .success-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 1rem;
+        }
+
+        .success-message {
+            color: #333;
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .success-modal-content h4 {
+            color: #333;
+            margin-bottom: 1rem;
+        }
+
+        .success-modal-content small {
+            color: #666;
+        }
+
+        .success-modal-content p {
+            color: #333;
+        }
+
+        .speaker-code-display-success {
+            background: #e8f4fd;
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            text-align: center;
+        }
+
+        .speaker-code-success {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #007bff;
+            letter-spacing: 0.5rem;
+            margin: 0.5rem 0;
+        }
+
+        .qr-code-container {
+            margin: 1.5rem 0;
+            text-align: center;
+        }
+
+        .qr-code {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 1rem;
+            background: white;
+            display: inline-block;
+        }
+
+        .action-buttons {
+            margin-top: 2rem;
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 5px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #1e7e34;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #666;
+        }
+
+                .close-modal:hover {
+            color: #333;
+        }
+
+        .success-message {
+            display: none;
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .error-message {
+            display: none;
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        /* Fix white text issues */
+        .join-header p {
+            color: #333 !important;
+        }
+
+        .form-group label {
+            color: #333 !important;
+        }
+
+        .form-group small {
+            color: #666 !important;
+        }
+
+        .speaker-code-display div {
+            color: #333 !important;
+        }
+
+        .speaker-code-display small {
+            color: #666 !important;
+        }
+
+        .plan-description {
+            color: #333 !important;
+        }
+
+        .plan-description br {
+            display: none;
+        }
+
+        .plan-description::before {
+            content: "";
+            display: block;
+            margin-top: 0.5rem;
+        }
+
+        /* Additional text color fixes */
+        .plan-name {
+            color: #333 !important;
+        }
+
+        .plan-price {
+            color: #007bff !important;
+        }
+
+        .form-section h3 {
+            color: #333 !important;
+        }
+
+        .form-section p {
+            color: #333 !important;
+        }
+
+        .speaker-code-display div:first-child {
+            color: #333 !important;
+        }
+
+        .speaker-code-display small {
+            color: #666 !important;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-content">
+            <a href="/" class="nav-brand">BMM Translation</a>
+            <div class="nav-links">
+                <a href="/">Home</a>
+                <a href="/join">Join</a>
+                <a href="/speaker">Speaker</a>
+                <a href="/audience">Audience</a>
+                <a href="/streams">Active Streams</a>
+                <a href="/contact">Contact</a>
+                <a href="/account">Account</a>
+            </div>
+            <span id="user-email" class="user-email"></span>
+            <a id="login-btn" href="/login" class="auth-button">Sign In</a>
+            <a id="logout-btn" href="/logout" class="auth-button" style="display: none;">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="join-container">
+            <div class="join-header">
+                <h1>Join BMM Translation</h1>
+                <p>Become a speaker and start sharing your voice with the world</p>
+                <p style="color: #007bff; font-weight: 600;">You are logged in as: <span id="user-name"></span></p>
+                <p style="color: #28a745; font-size: 0.9rem;">✓ Google account verified - Ready to complete registration</p>
+            </div>
+
+            <div class="success-message" id="success-message">
+                <strong>Success!</strong> Your account has been created successfully. You can now start using the speaker features.
+            </div>
+
+            <div class="error-message" id="error-message">
+                <strong>Error!</strong> <span id="error-text"></span>
+            </div>
+
+            <form id="join-form">
+                <!-- Personal Information Section -->
+                <div class="form-section">
+                    <h3>Personal Information</h3>
+                    <div class="form-group">
+                        <label for="name">Full Name *</label>
+                        <input type="text" id="name" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="email">Email Address *</label>
+                        <input type="email" id="email" name="email" required readonly>
+                        <small style="color: #666;">This is your Google account email and cannot be changed</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="preferred-language">Preferred Language *</label>
+                        <select id="preferred-language" name="preferred_language" required>
+                            <option value="">Select your preferred language</option>
+                            <option value="en-US">English (US)</option>
+                            <option value="en-GB">English (UK)</option>
+                            <option value="en-AU">English (Australia)</option>
+                            <option value="es-ES">Spanish (Spain)</option>
+                            <option value="es-MX">Spanish (Mexico)</option>
+                            <option value="fr-FR">French</option>
+                            <option value="de-DE">German</option>
+                            <option value="it-IT">Italian</option>
+                            <option value="pt-BR">Portuguese (Brazil)</option>
+                            <option value="ja-JP">Japanese</option>
+                            <option value="ko-KR">Korean</option>
+                            <option value="zh-CN">Chinese (Mandarin)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Speaker Code Section -->
+                <div class="form-section">
+                    <h3>Your Speaker Code</h3>
+                    <div class="speaker-code-display">
+                        <div>Your unique 5-digit speaker code:</div>
+                        <div class="speaker-code" id="speaker-code">-----</div>
+                        <small>This code will be generated automatically when you complete registration</small>
+                    </div>
+                </div>
+
+                <!-- Payment Plan Section -->
+                <div class="form-section">
+                    <h3>Choose Your Plan *</h3>
+                    <p style="color: #666; margin-bottom: 1rem;">Click on a plan below to select it:</p>
+                    <div class="plan-options">
+                        <div class="plan-option" data-plan="monthly-5">
+                            <div class="plan-name">Starter Monthly</div>
+                            <div class="plan-price">$350/month</div>
+                            <div class="plan-description">
+                                5 hours per month<br>
+                                $70/hour rate<br>
+                                Perfect for beginners
+                            </div>
+                        </div>
+                        <div class="plan-option" data-plan="monthly-8">
+                            <div class="plan-name">Professional Monthly</div>
+                            <div class="plan-price">$480/month</div>
+                            <div class="plan-description">
+                                8 hours per month<br>
+                                $60/hour rate<br>
+                                Great for regular speakers
+                            </div>
+                        </div>
+                        <div class="plan-option" data-plan="monthly-13">
+                            <div class="plan-name">Premium Monthly</div>
+                            <div class="plan-price">$650/month</div>
+                            <div class="plan-description">
+                                13 hours per month<br>
+                                $50/hour rate<br>
+                                For active speakers
+                            </div>
+                        </div>
+                        <div class="plan-option" data-plan="yearly-50">
+                            <div class="plan-name">Starter Yearly</div>
+                            <div class="plan-price">$2,500/year</div>
+                            <div class="plan-description">
+                                50 hours per year<br>
+                                $50/hour rate<br>
+                                Save 17% vs monthly
+                            </div>
+                        </div>
+                        <div class="plan-option" data-plan="yearly-100">
+                            <div class="plan-name">Professional Yearly</div>
+                            <div class="plan-price">$4,000/year</div>
+                            <div class="plan-description">
+                                100 hours per year<br>
+                                $40/hour rate<br>
+                                Save 17% vs monthly
+                            </div>
+                        </div>
+                        <div class="plan-option" data-plan="yearly-150">
+                            <div class="plan-name">Premium Yearly</div>
+                            <div class="plan-price">$4,500/year</div>
+                            <div class="plan-description">
+                                150 hours per year<br>
+                                $30/hour rate<br>
+                                Best value for professionals
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="selected-plan" name="plan" value="">
+                </div>
+
+                <!-- Payment Section -->
+                <div class="form-section payment-section">
+                    <h3>Payment Information</h3>
+                    <div class="form-group">
+                        <label for="card-element">Credit or Debit Card</label>
+                        <div id="card-element"></div>
+                        <div id="card-errors" role="alert"></div>
+                    </div>
+                </div>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Processing your registration...</p>
+                </div>
+
+                <button type="submit" class="submit-button" id="submit-button">
+                    Complete Registration
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="success-modal" class="success-modal">
+        <div class="success-modal-content">
+            <span class="close-modal" onclick="closeSuccessModal()">&times;</span>
+            
+            <div class="success-icon">🎉</div>
+            <h2 class="success-title">Congratulations!</h2>
+            <p class="success-message">
+                Your BMM Translation account has been created successfully! 
+                You're now ready to start sharing your voice with audiences around the world.
+            </p>
+
+            <div class="speaker-code-display-success">
+                <div>Your Speaker Code:</div>
+                <div class="speaker-code-success" id="modal-speaker-code">-----</div>
+                <small>Share this code with your audience so they can join your sessions</small>
+            </div>
+
+            <div class="qr-code-container">
+                <h4>QR Code for Audience</h4>
+                <div class="qr-code" id="qr-code">
+                    <!-- QR code will be generated here -->
+                </div>
+                <small>Scan this QR code to join your audience page</small>
+            </div>
+
+            <div class="action-buttons">
+                <a href="/account" class="btn btn-primary">View Account</a>
+                <a href="/speaker" class="btn btn-success">Start Speaking</a>
+                <button onclick="copySpeakerCode()" class="btn btn-secondary">Copy Speaker Code</button>
+                <button onclick="closeSuccessModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Populate email from session
+        async function populateEmailFromSession() {
+            try {
+                const response = await fetch('/session');
+                const data = await response.json();
+                if (data.email) {
+                    document.getElementById('email').value = data.email;
+                    console.log('Email populated from session:', data.email);
+                }
+            } catch (error) {
+                console.error('Error fetching session data:', error);
+            }
+        }
+
+        // Call this when page loads
+        document.addEventListener('DOMContentLoaded', populateEmailFromSession);
+
+        // Initialize Stripe
+        const stripeKey = '{{.StripePublishableKey}}';
+        console.log('Stripe key length:', stripeKey.length);
+        
+        if (!stripeKey || stripeKey === '') {
+            console.error('Stripe publishable key is missing!');
+        }
+        
+        const stripe = Stripe(stripeKey);
+        const elements = stripe.elements();
+
+        // Create card element
+        const card = elements.create('card', {
+            style: {
+                base: {
+                    fontSize: '16px',
+                    color: '#424770',
+                    '::placeholder': {
+                        color: '#aab7c4',
+                    },
+                },
+                invalid: {
+                    color: '#9e2146',
+                },
+            },
+        });
+
+        card.mount('#card-element');
+
+        // Handle card errors
+        card.addEventListener('change', function(event) {
+            const displayError = document.getElementById('card-errors');
+            if (event.error) {
+                displayError.textContent = event.error.message;
+            } else {
+                displayError.textContent = '';
+            }
+        });
+
+        // Plan selection
+        const planOptions = document.querySelectorAll('.plan-option');
+        const selectedPlanInput = document.getElementById('selected-plan');
+
+        console.log('Found plan options:', planOptions.length);
+
+        planOptions.forEach(option => {
+            option.addEventListener('click', function() {
+                console.log('Plan clicked:', this.dataset.plan);
+                // Remove selected class from all options
+                planOptions.forEach(opt => opt.classList.remove('selected'));
+                // Add selected class to clicked option
+                this.classList.add('selected');
+                // Update hidden input
+                selectedPlanInput.value = this.dataset.plan;
+                console.log('Selected plan:', selectedPlanInput.value);
+            });
+        });
+
+        // Form submission
+        const form = document.getElementById('join-form');
+        const submitButton = document.getElementById('submit-button');
+        const loading = document.getElementById('loading');
+        const successMessage = document.getElementById('success-message');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            // Validate form
+            if (!selectedPlanInput.value) {
+                showError('Please select a payment plan');
+                // Highlight the plan section to draw attention
+                document.querySelector('.plan-options').style.border = '2px solid #dc3545';
+                document.querySelector('.plan-options').style.borderRadius = '8px';
+                return;
+            }
+
+            // Show loading state
+            submitButton.disabled = true;
+            loading.style.display = 'block';
+            hideMessages();
+
+            try {
+                // Create payment method
+                const {paymentMethod, error} = await stripe.createPaymentMethod({
+                    type: 'card',
+                    card: card,
+                    billing_details: {
+                        name: document.getElementById('name').value,
+                        email: document.getElementById('email').value,
+                    },
+                });
+
+                if (error) {
+                    showError(error.message);
+                    return;
+                }
+
+                // Submit form data
+                const response = await fetch('/join', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: document.getElementById('name').value,
+                        email: document.getElementById('email').value,
+                        preferred_language: document.getElementById('preferred-language').value,
+                        plan: selectedPlanInput.value,
+                        payment_method_id: paymentMethod.id,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Show success modal
+                    showSuccessModal(result.speaker_code);
+                } else {
+                    showError(result.error || 'Registration failed');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('An unexpected error occurred');
+            } finally {
+                // Reset loading state
+                submitButton.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+
+        // Success modal functions
+        function showSuccessModal(speakerCode) {
+            // Update speaker code in modal
+            document.getElementById('modal-speaker-code').textContent = speakerCode;
+            
+            // Generate QR code for audience page
+            const audienceUrl = `${window.location.origin}/audience/${speakerCode}`;
+            generateQRCode(audienceUrl);
+            
+            // Show modal
+            document.getElementById('success-modal').style.display = 'block';
+        }
+
+        function closeSuccessModal() {
+            document.getElementById('success-modal').style.display = 'none';
+        }
+
+        function copySpeakerCode() {
+            const speakerCode = document.getElementById('modal-speaker-code').textContent;
+            navigator.clipboard.writeText(speakerCode).then(function() {
+                // Show temporary success message
+                const copyBtn = event.target;
+                const originalText = copyBtn.textContent;
+                copyBtn.textContent = 'Copied!';
+                copyBtn.style.background = '#28a745';
+                
+                setTimeout(() => {
+                    copyBtn.textContent = originalText;
+                    copyBtn.style.background = '#6c757d';
+                }, 2000);
+            }).catch(function(err) {
+                console.error('Could not copy text: ', err);
+            });
+        }
+
+        function generateQRCode(url) {
+            // Simple QR code generation using a service
+            const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+            
+            const qrCodeContainer = document.getElementById('qr-code');
+            qrCodeContainer.innerHTML = `<img src="${qrCodeUrl}" alt="QR Code" style="max-width: 200px; height: auto;">`;
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('success-modal');
+            if (event.target === modal) {
+                closeSuccessModal();
+            }
+        }
+
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeSuccessModal();
+            }
+        });
+
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.style.display = 'block';
+            successMessage.style.display = 'none';
+        }
+
+        function showSuccess(message) {
+            successMessage.textContent = message;
+            successMessage.style.display = 'block';
+            errorMessage.style.display = 'none';
+        }
+
+        function hideMessages() {
+            successMessage.style.display = 'none';
+            errorMessage.style.display = 'none';
+        }
+
+        // Session management
+        const loginBtn = document.getElementById("login-btn");
+        const logoutBtn = document.getElementById("logout-btn");
+        const emailSpan = document.getElementById("user-email");
+
+        if (loginBtn) {
+            loginBtn.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
+        }
+
+        fetch("/session")
+        .then(res => res.json())
+        .then(data => {
+            if (data.email) {
+                emailSpan.textContent = data.email;
+                loginBtn.style.display = "none";
+                logoutBtn.style.display = "inline";
+                
+                // Pre-fill form with user data
+                document.getElementById('name').value = data.name || '';
+                document.getElementById('email').value = data.email || '';
+                document.getElementById('user-name').textContent = data.name || data.email;
+            } else {
+                loginBtn.style.display = "inline";
+                logoutBtn.style.display = "none";
+                emailSpan.textContent = "";
+            }
+        });
+    </script>
+</body>
+</html> 

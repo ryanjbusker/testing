@@ -353,3 +353,8 @@ input[type="password"] {
         padding-top: 13rem; /* increase just a bit for extra tall nav */
     }
 }
+
+/* Hide speaker code display */
+#speaker-code-display {
+    display: none;
+}
