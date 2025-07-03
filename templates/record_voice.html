@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Record Your Voice - ElevenLabs Custom Voice</title>
+  <style>
+    body { font-family: sans-serif; max-width: 500px; margin: 2rem auto; padding: 2rem; background: #f8f9fa; border-radius: 8px; }
+    h1 { text-align: center; }
+    .controls { display: flex; justify-content: center; gap: 1rem; margin: 1rem 0; }
+    .timer { font-size: 2rem; text-align: center; margin: 1rem 0; }
+    .status { text-align: center; margin: 1rem 0; color: #007bff; }
+    .audio-preview { display: flex; justify-content: center; margin: 1rem 0; }
+    button { padding: 0.5rem 1.5rem; font-size: 1rem; border-radius: 4px; border: none; background: #007bff; color: white; cursor: pointer; }
+    button:disabled { background: #aaa; }
+  </style>
+</head>
+<body>
+  <h1>Record Your Voice</h1>
+  <div class="timer" id="timer">00:00</div>
+  <div class="controls">
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+  <div class="audio-preview" id="audioPreview"></div>
+  <div class="controls">
+    <button id="uploadBtn" disabled>Upload to ElevenLabs</button>
+  </div>
+  <div class="status" id="status"></div>
+  <script>
+    let mediaRecorder, audioChunks = [], timerInterval, seconds = 0;
+    const MAX_SECONDS = 30;
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const timer = document.getElementById('timer');
+    const audioPreview = document.getElementById('audioPreview');
+    const statusDiv = document.getElementById('status');
+    let audioBlob = null;
+
+    function updateTimer() {
+      timer.textContent = `0${Math.floor(seconds/60)}`.slice(-2) + ':' + `0${seconds%60}`.slice(-2);
+    }
+
+    function reset() {
+      seconds = 0;
+      updateTimer();
+      audioChunks = [];
+      audioBlob = null;
+      audioPreview.innerHTML = '';
+      uploadBtn.disabled = true;
+      statusDiv.textContent = '';
+    }
+
+    startBtn.onclick = async () => {
+      reset();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.start();
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+      statusDiv.textContent = 'Recording...';
+      timerInterval = setInterval(() => {
+        seconds++;
+        updateTimer();
+        if (seconds >= MAX_SECONDS) {
+          stopBtn.click();
+        }
+      }, 1000);
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = () => {
+        clearInterval(timerInterval);
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        statusDiv.textContent = 'Recording stopped.';
+        audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(audioBlob);
+        audioPreview.innerHTML = `<audio controls src="${url}"></audio>`;
+        uploadBtn.disabled = false;
+      };
+    };
+
+    stopBtn.onclick = () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+    };
+
+    uploadBtn.onclick = async () => {
+      if (!audioBlob) return;
+      statusDiv.textContent = 'Uploading...';
+      uploadBtn.disabled = true;
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'voice_sample.webm');
+      formData.append('voice_name', 'User Custom Voice');
+      try {
+        const res = await fetch('/api/create-elevenlabs-voice', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          statusDiv.textContent = 'Voice created! Voice ID: ' + data.voice_id;
+        } else {
+          statusDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+        }
+      } catch (err) {
+        statusDiv.textContent = 'Upload failed.';
+      }
+      uploadBtn.disabled = false;
+    };
+
+    reset();
+  </script>
+</body>
+</html> 

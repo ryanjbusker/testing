@@ -149,6 +149,123 @@
             font-size: 0.9rem;
         }
 
+        /* Voice Recording Modal Styles */
+        .voice-recording-modal {
+            display: none;
+            position: fixed;
+            z-index: 1001;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .voice-recording-modal-content {
+            background-color: #fefefe;
+            margin: 2% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 95%;
+            max-width: 450px;
+            max-height: 90vh;
+            border-radius: 10px;
+            position: relative;
+            overflow-y: auto;
+        }
+
+        .voice-recording-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 2px solid #007bff;
+        }
+
+        .recording-container {
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .recording-container .timer {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #007bff;
+            margin: 10px 0;
+        }
+
+        .recording-container .controls {
+            display: flex;
+            justify-content: center;
+            gap: 0.8rem;
+            margin: 0.5rem 0;
+        }
+
+        .recording-container .audio-preview {
+            margin: 10px 0;
+        }
+
+        .recording-container .status {
+            margin: 8px 0;
+            padding: 6px;
+            border-radius: 5px;
+            font-weight: 500;
+        }
+
+        .recording-container .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .recording-container .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .recording-container .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        /* Mobile-specific adjustments */
+        @media (max-height: 600px) {
+            .voice-recording-modal-content {
+                margin: 1% auto;
+                padding: 15px;
+                max-height: 95vh;
+            }
+            
+            .recording-container {
+                margin: 8px 0;
+            }
+            
+            .recording-container .timer {
+                font-size: 1.3rem;
+                margin: 8px 0;
+            }
+            
+            .recording-container .controls {
+                margin: 0.3rem 0;
+            }
+            
+            .recording-container .btn {
+                padding: 0.5rem 1rem;
+                font-size: 0.85rem;
+            }
+        }
+
         .payment-section {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
@@ -229,8 +346,11 @@
             border-radius: 10px;
             width: 90%;
             max-width: 600px;
+            max-height: 80vh;
             text-align: center;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            overflow-y: auto;
+            position: relative;
         }
 
         .success-icon {
@@ -313,6 +433,11 @@
             text-decoration: none;
             display: inline-block;
             transition: all 0.3s ease;
+        }
+
+        .recording-container .btn {
+            padding: 0.6rem 1.2rem;
+            font-size: 0.9rem;
         }
 
         .btn-primary {
@@ -402,6 +527,34 @@
 
         .plan-description br {
             display: none;
+        }
+
+        /* Modal text color fixes */
+        .success-modal-content,
+        .success-modal-content *,
+        .voice-recording-modal-content,
+        .voice-recording-modal-content * {
+            color: #333 !important;
+        }
+
+        .success-modal-content h2,
+        .success-modal-content h4,
+        .voice-recording-modal-content h2 {
+            color: #333 !important;
+        }
+
+        .success-modal-content p,
+        .voice-recording-modal-content p {
+            color: #333 !important;
+        }
+
+        .success-modal-content small,
+        .voice-recording-modal-content small {
+            color: #666 !important;
+        }
+
+        .speaker-code-success {
+            color: #007bff !important;
         }
 
         .plan-description::before {
@@ -626,11 +779,41 @@
                 <small>Scan this QR code to join your audience page</small>
             </div>
 
+            <!-- Voice Recording Section for Premium Plans -->
+            <div id="voice-recording-section" class="voice-recording-section" style="display: none;">
+                <h4>🎤 Record Your Custom Voice</h4>
+                <p>As a premium subscriber, you can create a custom voice for your translations. Record 30 seconds of clear speech to get started.</p>
+                <button onclick="showVoiceRecordingModal()" class="btn btn-primary">Record My Voice</button>
+            </div>
+
             <div class="action-buttons">
                 <a href="/account" class="btn btn-primary">View Account</a>
                 <a href="/speaker" class="btn btn-success">Start Speaking</a>
                 <button onclick="copySpeakerCode()" class="btn btn-secondary">Copy Speaker Code</button>
                 <button onclick="closeSuccessModal()" class="btn btn-secondary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Voice Recording Modal -->
+    <div id="voice-recording-modal" class="voice-recording-modal">
+        <div class="voice-recording-modal-content">
+            <span class="close-modal" onclick="closeVoiceRecordingModal()">&times;</span>
+            
+            <h2 style="margin-bottom: 10px;">🎤 Record Your Custom Voice</h2>
+            <p style="margin-bottom: 15px;">Record 30 seconds of clear speech to create your custom voice for translations.</p>
+            
+            <div class="recording-container">
+                <div class="timer" id="voice-timer">00:00</div>
+                <div class="controls">
+                    <button id="voice-startBtn" class="btn btn-primary">Start Recording</button>
+                    <button id="voice-stopBtn" class="btn btn-danger" disabled>Stop</button>
+                </div>
+                <div class="audio-preview" id="voice-audioPreview"></div>
+                <div class="controls">
+                    <button id="voice-uploadBtn" class="btn btn-success" disabled>Create My Voice</button>
+                </div>
+                <div class="status" id="voice-status"></div>
             </div>
         </div>
     </div>
@@ -794,6 +977,12 @@
             const audienceUrl = `${window.location.origin}/audience/${speakerCode}`;
             generateQRCode(audienceUrl);
             
+            // Check if user selected a premium plan and show voice recording section
+            const selectedPlan = document.getElementById('selected-plan').value;
+            if (selectedPlan.includes('monthly-13') || selectedPlan.includes('yearly-150')) {
+                document.getElementById('voice-recording-section').style.display = 'block';
+            }
+            
             // Show modal
             document.getElementById('success-modal').style.display = 'block';
         }
@@ -828,18 +1017,24 @@
             qrCodeContainer.innerHTML = `<img src="${qrCodeUrl}" alt="QR Code" style="max-width: 200px; height: auto;">`;
         }
 
-        // Close modal when clicking outside
+        // Close modals when clicking outside
         window.onclick = function(event) {
-            const modal = document.getElementById('success-modal');
-            if (event.target === modal) {
+            const successModal = document.getElementById('success-modal');
+            const voiceModal = document.getElementById('voice-recording-modal');
+            
+            if (event.target === successModal) {
                 closeSuccessModal();
+            }
+            if (event.target === voiceModal) {
+                closeVoiceRecordingModal();
             }
         }
 
-        // Close modal with Escape key
+        // Close modals with Escape key
         document.addEventListener('keydown', function(event) {
             if (event.key === 'Escape') {
                 closeSuccessModal();
+                closeVoiceRecordingModal();
             }
         });
 
@@ -859,6 +1054,131 @@
             successMessage.style.display = 'none';
             errorMessage.style.display = 'none';
         }
+
+        // Voice Recording Modal Functions
+        function showVoiceRecordingModal() {
+            document.getElementById('voice-recording-modal').style.display = 'block';
+            initializeVoiceRecording();
+        }
+
+        function closeVoiceRecordingModal() {
+            document.getElementById('voice-recording-modal').style.display = 'none';
+            resetVoiceRecording();
+        }
+
+        // Voice Recording Variables
+        let voiceMediaRecorder, voiceAudioChunks = [], voiceTimerInterval, voiceSeconds = 0;
+        const VOICE_MAX_SECONDS = 30;
+        let voiceAudioBlob = null;
+
+        function initializeVoiceRecording() {
+            const voiceStartBtn = document.getElementById('voice-startBtn');
+            const voiceStopBtn = document.getElementById('voice-stopBtn');
+            const voiceUploadBtn = document.getElementById('voice-uploadBtn');
+            const voiceTimer = document.getElementById('voice-timer');
+            const voiceAudioPreview = document.getElementById('voice-audioPreview');
+            const voiceStatus = document.getElementById('voice-status');
+
+            function updateVoiceTimer() {
+                voiceTimer.textContent = `0${Math.floor(voiceSeconds/60)}`.slice(-2) + ':' + `0${voiceSeconds%60}`.slice(-2);
+            }
+
+            function resetVoiceRecording() {
+                voiceSeconds = 0;
+                updateVoiceTimer();
+                voiceAudioChunks = [];
+                voiceAudioBlob = null;
+                voiceAudioPreview.innerHTML = '';
+                voiceUploadBtn.disabled = true;
+                voiceStatus.textContent = '';
+                voiceStatus.className = 'status';
+            }
+
+            voiceStartBtn.onclick = async () => {
+                resetVoiceRecording();
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    voiceMediaRecorder = new MediaRecorder(stream);
+                    voiceMediaRecorder.start();
+                    voiceStartBtn.disabled = true;
+                    voiceStopBtn.disabled = false;
+                    voiceStatus.textContent = 'Recording...';
+                    voiceStatus.className = 'status info';
+                    
+                    voiceTimerInterval = setInterval(() => {
+                        voiceSeconds++;
+                        updateVoiceTimer();
+                        if (voiceSeconds >= VOICE_MAX_SECONDS) {
+                            voiceStopBtn.click();
+                        }
+                    }, 1000);
+                    
+                    voiceMediaRecorder.ondataavailable = e => voiceAudioChunks.push(e.data);
+                    voiceMediaRecorder.onstop = () => {
+                        clearInterval(voiceTimerInterval);
+                        voiceStartBtn.disabled = false;
+                        voiceStopBtn.disabled = true;
+                        voiceStatus.textContent = 'Recording stopped.';
+                        voiceStatus.className = 'status info';
+                        voiceAudioBlob = new Blob(voiceAudioChunks, { type: 'audio/webm' });
+                        const url = URL.createObjectURL(voiceAudioBlob);
+                        voiceAudioPreview.innerHTML = `<audio controls src="${url}"></audio>`;
+                        voiceUploadBtn.disabled = false;
+                    };
+                } catch (error) {
+                    voiceStatus.textContent = 'Error accessing microphone: ' + error.message;
+                    voiceStatus.className = 'status error';
+                }
+            };
+
+            voiceStopBtn.onclick = () => {
+                if (voiceMediaRecorder && voiceMediaRecorder.state === 'recording') {
+                    voiceMediaRecorder.stop();
+                }
+            };
+
+            voiceUploadBtn.onclick = async () => {
+                if (!voiceAudioBlob) return;
+                voiceStatus.textContent = 'Creating your custom voice...';
+                voiceStatus.className = 'status info';
+                voiceUploadBtn.disabled = true;
+                
+                const formData = new FormData();
+                formData.append('audio', voiceAudioBlob, 'voice_sample.webm');
+                formData.append('voice_name', 'My Custom Voice');
+                formData.append('description', 'Custom voice created during registration');
+                
+                try {
+                    const res = await fetch('/api/create-elevenlabs-voice', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        voiceStatus.textContent = '🎉 Your custom voice has been created successfully!';
+                        voiceStatus.className = 'status success';
+                        voiceUploadBtn.textContent = 'Voice Created!';
+                        voiceUploadBtn.disabled = true;
+                        
+                        // Close modal after 3 seconds
+                        setTimeout(() => {
+                            closeVoiceRecordingModal();
+                        }, 3000);
+                    } else {
+                        voiceStatus.textContent = 'Error: ' + (data.error || 'Unknown error');
+                        voiceStatus.className = 'status error';
+                        voiceUploadBtn.disabled = false;
+                    }
+                } catch (err) {
+                    voiceStatus.textContent = 'Upload failed: ' + err.message;
+                    voiceStatus.className = 'status error';
+                    voiceUploadBtn.disabled = false;
+                }
+            };
+
+                    // Initialize
+        resetVoiceRecording();
+    }
 
         // Session management
         const loginBtn = document.getElementById("login-btn");

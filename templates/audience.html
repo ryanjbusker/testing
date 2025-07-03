@@ -145,48 +145,30 @@
     }
 
     function getVoiceId(label) {
-        const voices = {
-            'Arabic': 'Zeina',
-            'Arabic (Gulf)': 'Zayd',
-            'Catalan': 'Arlet',
-            'Chinese (Cantonese)': 'Hiujin',
-            'Chinese (Mandarin)': 'Zhiyu',
-            'Czech': 'Jitka',
-            'Danish': 'Mads',
-            'Dutch': 'Laura',
-            'Dutch (Belgian)': 'Laura',
-            'English': 'Matthew',
-            'English (Australian)': 'Russell',
-            'English (British)': 'Brian',
-            'English (Indian)': 'Kajal',
-            'English (New Zealand)': 'Aria',
-            'English (Welsh)': 'Geraint',
-            'Finnish': 'Suvi',
-            'French': 'Mathieu',
-            'French (Belgian)': 'Isabelle',
-            'French (Canadian)': 'Liam',
-            'German': 'Daniel',
-            'German (Austrian)': 'Hannah',
-            'German (Swiss Standard)': 'Sabrina',
-            'Hindi': 'Aditi',
-            'Icelandic': 'Karl',
-            'Italian': 'Giorgio',
-            'Japanese': 'Takumi',
+        // Map language labels to valid AWS Polly voice IDs
+        const voiceMap = {
+            'English': 'Joanna',
+            'Spanish': 'Lupe',
+            'French': 'Lea',
+            'German': 'Vicki',
+            'Italian': 'Bianca',
+            'Portuguese': 'Camila',
+            'Japanese': 'Mizuki',
             'Korean': 'Seoyeon',
-            'Norwegian': 'Ida',
-            'Polish': 'Ola',
-            'Portuguese (Brazilian)': 'Ricardo',
-            'Portuguese (European)': 'Cristiano',
-            'Romanian': 'Carmen',
-            'Russian': 'Maxim',
-            'Spanish (Spain)': 'Sergio',
-            'Spanish (Mexican)': 'Andres',
-            'Spanish (US)': 'Pedro',
+            'Chinese': 'Zhiyu',
+            'Russian': 'Tatyana',
+            'Arabic': 'Zeina',
+            'Hindi': 'Aditi',
+            'Dutch': 'Lotte',
             'Swedish': 'Elin',
-            'Turkish': 'Burcu',
-            'Welsh': 'Gwyneth'
+            'Danish': 'Naja',
+            'Norwegian': 'Liv',
+            'Finnish': 'Suvi',
+            'Polish': 'Ewa',
+            'Turkish': 'Filiz'
         };
-        return voices[label] || 'Matthew'; // Default to English male
+        
+        return voiceMap[label] || 'Joanna'; // Default to Joanna if language not found
     }
 
     async function speakText(text, lang) {

@@ -4,7 +4,6 @@ import (
 	"context" //Added for OAuth
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -26,11 +25,9 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/polly"
-	"github.com/aws/aws-sdk-go-v2/service/polly/types"
 
 	// Add Deepgram SDK imports
 	msginterfaces "github.com/deepgram/deepgram-go-sdk/pkg/api/listen/v1/websocket/interfaces"
@@ -44,8 +41,6 @@ import (
 
 	"github.com/stripe/stripe-go/v78"
 	"github.com/stripe/stripe-go/v78/subscription"
-	"html"
-	"strconv"
 )
 
 var translator *translation.Translator
@@ -168,7 +163,6 @@ func (cb *DeepgramCallback) Message(mr *msginterfaces.MessageResponse) error {
 	return nil
 }
 
-
 // Open implements the LiveMessageCallback interface
 func (cb *DeepgramCallback) Open(ocr *msginterfaces.OpenResponse) error {
 	log.Printf("[Deepgram] Connection opened for speaker: %s", cb.SpeakerID)
@@ -216,7 +210,6 @@ func (cb *DeepgramCallback) UtteranceEnd(ur *msginterfaces.UtteranceEndResponse)
 	}
 	return nil
 }
-
 
 // Close implements the LiveMessageCallback interface
 func (cb *DeepgramCallback) Close(closeResponse *msginterfaces.CloseResponse) error {
@@ -363,12 +356,20 @@ func init() {
 
 	//Initialize session store using the loaded key
 	store = sessions.NewCookieStore([]byte(key))
+	// Dynamic cookie domain based on environment
+	cookieDomain := os.Getenv("COOKIE_DOMAIN")
+	if cookieDomain == "" {
+		// Default to no domain restriction (works for both localhost and render)
+		cookieDomain = ""
+	}
+
 	store.Options = &sessions.Options{
 		Path:     "/",
 		MaxAge:   86400 * 7, // 7 days
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, // or SameSiteStrictMode
 		Secure:   os.Getenv("ENV") == "production",
+		Domain:   cookieDomain, // Will be empty for localhost/render, set for custom domain
 	}
 
 	// Log AWS configuration values
@@ -720,7 +721,7 @@ func main() {
 		})
 	})
 
-	router.GET("/streams",  authMiddleware(db), func(c *gin.Context) {
+	router.GET("/streams", authMiddleware(db), func(c *gin.Context) {
 		mu.RLock()
 		activeStreams := make([]map[string]interface{}, 0)
 		activeStreams = append(activeStreams, map[string]interface{}{
@@ -883,7 +884,7 @@ func main() {
 		c.Redirect(http.StatusSeeOther, "/")
 	})
 
-	router.GET("/account",  authMiddleware(db), func(c *gin.Context) {
+	router.GET("/account", authMiddleware(db), func(c *gin.Context) {
 		log.Printf("Serving account.html")
 		c.HTML(http.StatusOK, "account.html", gin.H{
 			"title": "Account",
@@ -904,14 +905,15 @@ func main() {
 			SubscriptionID   string    `json:"subscription_id"`
 			StripeCustomerID string    `json:"stripe_customer_id"`
 			PlanName         string    `json:"plan_name"`
+			VoiceID          string    `json:"voice_id"`
 			CreatedAt        time.Time `json:"created_at"`
 		}
 
 		err := db.QueryRow(`
-			SELECT payment_status, subscription_id, stripe_customer_id, plan_name, created_at
+			SELECT payment_status, subscription_id, stripe_customer_id, plan_name, voice_id, created_at
 			FROM speakers 
 			WHERE google_id = $1
-		`, googleSub).Scan(&accountDetails.PaymentStatus, &accountDetails.SubscriptionID, &accountDetails.StripeCustomerID, &accountDetails.PlanName, &accountDetails.CreatedAt)
+		`, googleSub).Scan(&accountDetails.PaymentStatus, &accountDetails.SubscriptionID, &accountDetails.StripeCustomerID, &accountDetails.PlanName, &accountDetails.VoiceID, &accountDetails.CreatedAt)
 
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -932,17 +934,23 @@ func main() {
 			// Use the stored plan name to determine the display name and details
 			switch accountDetails.PlanName {
 			case "monthly-5":
-				subscriptionPlan = "Starter Monthly"
+				subscriptionPlan = "Starter Monthly - Hours"
 				planDetails = "5 hours/month - $350/month"
 			case "monthly-8":
-				subscriptionPlan = "Professional Monthly"
+				subscriptionPlan = "Professional Monthly - 8 Hours"
 				planDetails = "8 hours/month - $480/month"
-			case "yearly-5":
+			case "monthly-13":
+				subscriptionPlan = "Premium Monthly"
+				planDetails = "13 hours/month - $650/month"
+			case "yearly-50":
 				subscriptionPlan = "Starter Yearly"
-				planDetails = "5 hours/month - $3,500/year"
-			case "yearly-8":
+				planDetails = "50 hours/year - $2,500/year"
+			case "yearly-100":
 				subscriptionPlan = "Professional Yearly"
-				planDetails = "8 hours/month - $4,800/year"
+				planDetails = "100 hours/year - $4,000/year"
+			case "yearly-150":
+				subscriptionPlan = "Premium Yearly"
+				planDetails = "150 hours/year - $4,500/year"
 			default:
 				subscriptionPlan = "Active Subscription"
 				planDetails = "Custom Plan"
@@ -981,6 +989,7 @@ func main() {
 			"subscription_plan":  subscriptionPlan,
 			"plan_details":       planDetails,
 			"next_billing":       nextBilling,
+			"voice_id":           accountDetails.VoiceID,
 			"last_login":         time.Now().Format("2006-01-02 15:04:05"), // You can enhance this with actual last login tracking
 		})
 	})
@@ -993,7 +1002,13 @@ func main() {
 	})
 
 	// Add Polly TTS endpoint
-	router.POST("/polly-tts", handlePollyTTS)
+	router.POST("/polly-tts", handlePollyTTS(db))
+	// Add ElevenLabs voice creation endpoint
+	router.POST("/api/create-elevenlabs-voice", handleCreateElevenLabsVoice(db))
+
+	// Add delete account endpoint
+	router.POST("/delete-account", authMiddleware(db), handleDeleteAccount(db))
+
 	router.POST("/admin/insert-user", func(c *gin.Context) {
 		var user struct {
 			GoogleID string `json:"google_id"`
@@ -1951,136 +1966,102 @@ func extractGoogleUserInfo(resp *http.Response) (*GoogleUserInfo, error) {
 	return &userInfo, nil
 }
 
-var voiceSupportsNeural = map[string]bool{
-	"Matthew":   true,
-	"Brian":     true,
-	"Joanna":    true,
-	"Kevin":     true,
-	"Kajal":     true,
-	"Aria":      true,
-	"Zayd":      true,
-	"Arlet":     true,
-	"Hiujin":    true,
-	"Zhiyu":     true,
-	"Jitka":     true,
-	"Sofie":     true,
-	"Laura":     true,
-	"Suvi":      true,
-	"Rémi":      true,
-	"Isabelle":  true,
-	"Liam":      true,
-	"Daniel":    true,
-	"Hannah":    true,
-	"Sabrina":   true,
-	"Adriano":   true,
-	"Takumi":    true,
-	"Seoyeon":   true,
-	"Ida":       true,
-	"Ola":       true,
-	"Thiago":    true,
-	"Ines":      true,
-	"Sergio":    true,
-	"Andrés":    true,
-	"Andres":    true,
-	"Pedro":     true,
-	"Elin":     true,
-	"Burcu":     true,
+// isPremiumSubscription checks if the user has a premium subscription
+func isPremiumSubscription(planName string) bool {
+	// Define premium plans - these are the higher-tier plans
+	premiumPlans := map[string]bool{
+		"monthly-13": true, // Premium Monthly
+		"yearly-150": true, // Premium Yearly
+	}
+
+	return premiumPlans[planName]
 }
 
+func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.Println("=== TTS ENDPOINT CALLED ===")
 
-func handlePollyTTS(c *gin.Context) {
-	log.Println("=== POLLY TTS ENDPOINT CALLED ===")
-
-	var req struct {
-		Text     string `json:"text"`
-		Language string `json:"language"`
-		VoiceId  string `json:"voiceId"`
-		Speed    string `json:"speed"`
-	}
-	if err := c.BindJSON(&req); err != nil {
-		log.Printf("Error binding JSON request: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
-		return
-	}
-
-	// Log the incoming request
-	log.Printf("Polly TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
-
-	var voiceId types.VoiceId
-	if req.VoiceId != "" {
-		log.Printf("Using provided VoiceId: %s", req.VoiceId)
-		voiceId = types.VoiceId(req.VoiceId)
-	} else {
-		log.Printf("Missing VoiceId; defaulting to 'Matthew'")
-		voiceId = types.VoiceId("Matthew")
-	}
-
-	log.Printf("Selected voice ID: %s", voiceId)
-
-	engine := types.EngineStandard
-	if voiceSupportsNeural[req.VoiceId] {
-		engine = types.EngineNeural
-		log.Printf("Using neural engine for voice: %s", req.VoiceId)
-	} else {
-		log.Printf("Using standard engine for voice: %s (neural not supported)", req.VoiceId)
-	}
-
-	finalText := req.Text
-	isSSML := false
-
-	if req.Speed != "" && req.Speed != "1" {
-		speedFloat, err := strconv.ParseFloat(req.Speed, 64)
-		if err == nil {
-			rate := fmt.Sprintf("%.0f%%", speedFloat*100)
-			finalText = fmt.Sprintf(`<speak><prosody rate="%s">%s</prosody></speak>`, rate, html.EscapeString(req.Text))
-			isSSML = true
-			log.Printf("Text wrapped in SSML with rate=%s: %s", rate, finalText)
-		} else {
-			log.Printf("Invalid speed value %q; using raw text", req.Speed)
+		var req struct {
+			Text     string `json:"text"`
+			Language string `json:"language"`
+			VoiceId  string `json:"voiceId"`
+			Speed    string `json:"speed"`
 		}
+		if err := c.BindJSON(&req); err != nil {
+			log.Printf("Error binding JSON request: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
+
+		log.Printf("TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
+
+		// Get user's subscription information
+		var planName string
+		var userVoiceID string
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+
+		if ok {
+			// Get user's plan and voice_id from database
+			err := db.QueryRow("SELECT plan_name, voice_id FROM speakers WHERE google_id = $1", googleSub).Scan(&planName, &userVoiceID)
+			if err != nil {
+				log.Printf("Error getting user subscription info: %v", err)
+				// Continue with default behavior
+			}
+		}
+
+		// Determine which TTS service to use based on subscription
+		var audio []byte
+		var err error
+		var serviceUsed string
+
+		if isPremiumSubscription(planName) {
+			// Premium users get ElevenLabs (better quality)
+			log.Printf("Using ElevenLabs TTS for premium user with plan: %s", planName)
+
+			voiceID := userVoiceID
+			if voiceID == "" {
+				voiceID = os.Getenv("ELEVENLABS_DEFAULT_VOICE_ID")
+				if voiceID == "" {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "VoiceId is required and no default is set"})
+					return
+				}
+			}
+
+			audio, err = translation.SynthesizeSpeech(req.Text, voiceID, req.Language)
+			serviceUsed = "ElevenLabs"
+		} else {
+			// Regular users get AWS Polly
+			log.Printf("Using AWS Polly TTS for regular user with plan: %s", planName)
+
+			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, req.VoiceId, req.Speed)
+			serviceUsed = "AWS Polly"
+		}
+
+		if err != nil {
+			log.Printf("Error synthesizing speech with %s: %v", serviceUsed, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to synthesize speech"})
+			return
+		}
+
+		log.Printf("Successfully received response from %s", serviceUsed)
+
+		// Set headers for audio streaming
+		c.Header("Content-Type", "audio/mpeg")
+		c.Header("Content-Disposition", "attachment; filename=speech.mp3")
+		c.Header("Transfer-Encoding", "chunked")
+
+		// Stream the audio data to the client
+		_, err = c.Writer.Write(audio)
+		if err != nil {
+			log.Printf("Error streaming audio: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stream audio"})
+			return
+		}
+
+		log.Printf("Successfully streamed audio to client using %s", serviceUsed)
+		log.Println("=== TTS ENDPOINT COMPLETED ===")
 	}
-
-
-	input := &polly.SynthesizeSpeechInput{
-		// Text:         aws.String(req.Text),
-		Text:         aws.String(finalText),
-		OutputFormat: types.OutputFormatMp3,
-		VoiceId:      voiceId,
-		Engine:       engine,
-	}
-
-	if isSSML {
-		input.TextType = types.TextTypeSsml
-	}
-
-
-	log.Printf("Sending request to Polly with input: %+v", input)
-
-	output, err := pollyClient.SynthesizeSpeech(context.Background(), input)
-	if err != nil {
-		log.Printf("Error synthesizing speech: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to synthesize speech"})
-		return
-	}
-
-	log.Printf("Successfully received response from Polly")
-
-	// Set headers for audio streaming
-	c.Header("Content-Type", "audio/mpeg")
-	c.Header("Content-Disposition", "attachment; filename=speech.mp3")
-	c.Header("Transfer-Encoding", "chunked")
-
-	// Stream the audio data to the client
-	defer output.AudioStream.Close()
-	_, err = io.Copy(c.Writer, output.AudioStream)
-	if err != nil {
-		log.Printf("Error streaming audio: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stream audio"})
-		return
-	}
-
-	log.Printf("Successfully streamed audio to client")
-	log.Println("=== POLLY TTS ENDPOINT COMPLETED ===")
 }
 
 // generateUniqueSpeakerCode generates a unique 5-digit speaker code
@@ -2181,4 +2162,166 @@ func createSubscriptionForPlan(db *sql.DB, speaker *Speaker, plan, paymentMethod
 	speaker.PaymentStatus = "active"
 
 	return nil
+}
+
+func handleCreateElevenLabsVoice(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Parse multipart form
+		audioFile, audioHeader, err := c.Request.FormFile("audio")
+		if err != nil {
+			c.JSON(400, gin.H{"error": "Missing audio file"})
+			return
+		}
+		defer audioFile.Close()
+
+		voiceName := c.PostForm("voice_name")
+		if voiceName == "" {
+			voiceName = "User Custom Voice"
+		}
+		description := c.PostForm("description")
+
+		// Get user from session
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(401, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		voiceID, err := translation.AddCustomVoice(audioFile, audioHeader, voiceName, description)
+		if err != nil {
+			c.JSON(500, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Store the voice_id in the speakers table
+		_, err = db.Exec("UPDATE speakers SET voice_id = $1 WHERE google_id = $2", voiceID, googleSub)
+		if err != nil {
+			c.JSON(500, gin.H{"error": "Failed to save voice_id"})
+			return
+		}
+
+		c.JSON(200, gin.H{"voice_id": voiceID})
+	}
+}
+
+func handleDeleteAccount(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.Println("=== DELETE ACCOUNT ENDPOINT CALLED ===")
+
+		// Get user from session
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		// Get user's voice_id and subscription_id from database
+		var voiceID, subscriptionID, stripeCustomerID, planName sql.NullString
+		err := db.QueryRow("SELECT voice_id, subscription_id, stripe_customer_id, plan_name FROM speakers WHERE google_id = $1", googleSub).Scan(&voiceID, &subscriptionID, &stripeCustomerID, &planName)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+				return
+			}
+			log.Printf("Error getting user data: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		// Log user type for debugging
+		userType := "Regular"
+		planNameStr := ""
+		if planName.Valid {
+			planNameStr = planName.String
+			if isPremiumSubscription(planNameStr) {
+				userType = "Premium"
+			}
+		}
+		log.Printf("Deleting %s user account - Plan: %s, Voice ID: %s, Subscription ID: %s", userType, planNameStr, voiceID.String, subscriptionID.String)
+
+		// 1. Cancel Stripe subscription if it exists
+		if subscriptionID.Valid && subscriptionID.String != "" {
+			log.Printf("Cancelling Stripe subscription: %s", subscriptionID.String)
+			stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
+
+			// Cancel the subscription
+			params := &stripe.SubscriptionParams{
+				CancelAtPeriodEnd: stripe.Bool(true),
+			}
+			_, err := subscription.Update(subscriptionID.String, params)
+			if err != nil {
+				log.Printf("Error cancelling Stripe subscription: %v", err)
+				// Continue with deletion even if subscription cancellation fails
+			} else {
+				log.Printf("Successfully cancelled Stripe subscription: %s", subscriptionID.String)
+			}
+		} else {
+			log.Printf("No Stripe subscription found to cancel")
+		}
+
+		// 2. Delete custom voice from ElevenLabs if it exists (only for premium users)
+		if voiceID.Valid && voiceID.String != "" {
+			log.Printf("Deleting ElevenLabs voice: %s", voiceID.String)
+			err := translation.DeleteCustomVoice(voiceID.String)
+			if err != nil {
+				log.Printf("Error deleting ElevenLabs voice: %v", err)
+				// Continue with deletion even if voice deletion fails
+			} else {
+				log.Printf("Successfully deleted ElevenLabs voice: %s", voiceID.String)
+			}
+		} else {
+			log.Printf("No custom voice found to delete (user may have basic subscription)")
+		}
+
+		// 3. Delete all related data from database
+		// Start a transaction to ensure all deletions succeed or fail together
+		tx, err := db.Begin()
+		if err != nil {
+			log.Printf("Error starting transaction: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+		defer tx.Rollback() // Will be ignored if tx.Commit() is called
+
+		// Delete speaking sessions
+		_, err = tx.Exec("DELETE FROM speaking_sessions WHERE speaker_id = (SELECT id FROM speakers WHERE google_id = $1)", googleSub)
+		if err != nil {
+			log.Printf("Error deleting speaking sessions: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete speaking sessions"})
+			return
+		}
+
+		// Delete the speaker record
+		result, err := tx.Exec("DELETE FROM speakers WHERE google_id = $1", googleSub)
+		if err != nil {
+			log.Printf("Error deleting speaker: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete speaker account"})
+			return
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			log.Printf("Error getting rows affected: %v", err)
+		} else {
+			log.Printf("Deleted %d speaker record(s)", rowsAffected)
+		}
+
+		// Commit the transaction
+		if err := tx.Commit(); err != nil {
+			log.Printf("Error committing transaction: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit database changes"})
+			return
+		}
+
+		// 4. Clear the session
+		session.Options.MaxAge = -1
+		session.Save(c.Request, c.Writer)
+
+		log.Printf("Successfully deleted account for user: %s", googleSub)
+		log.Println("=== DELETE ACCOUNT ENDPOINT COMPLETED ===")
+
+		c.JSON(http.StatusOK, gin.H{"message": "Account successfully deleted"})
+	}
 }

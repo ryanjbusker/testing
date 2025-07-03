@@ -124,6 +124,31 @@
         </div>
     </div>
 
+    <!-- Confirmation Modal for Account Deletion -->
+    <div id="delete-account-modal" class="modal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
+        <div class="modal-content" style="background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 8px;">
+            <div style="text-align: center;">
+                <h3 style="color: #dc3545; margin-bottom: 1rem;">⚠️ Confirm Account Deletion</h3>
+                <p style="margin-bottom: 1.5rem; color: #495057;">
+                    Are you sure you want to permanently delete your account? This will:
+                </p>
+                <ul style="text-align: left; margin-bottom: 1.5rem; color: #495057;">
+                    <li>Cancel your subscription</li>
+                    <li id="voice-deletion-item">Delete your custom voice from ElevenLabs (if applicable)</li>
+                    <li>Remove all your data from our database</li>
+                    <li>Delete your speaker code and all associated records</li>
+                </ul>
+                <p style="color: #dc3545; font-weight: bold; margin-bottom: 1.5rem;">
+                    This action cannot be undone!
+                </p>
+                <div style="margin-top: 2rem;">
+                    <button id="confirm-delete-btn" class="btn btn-danger" style="margin-right: 1rem;">Yes, Delete My Account</button>
+                    <button id="cancel-delete-btn" class="btn btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         const emailSpan = document.getElementById("user-email");
         const loginBtn = document.getElementById("login-btn");
@@ -193,6 +218,16 @@
                                         <a id="open-audience-link" href="#" target="_blank" class="btn btn-outline-success btn-sm" style="margin-left: 0.5rem;">Open Link</a>
                                     </div>
                                 </div>
+                                <div class="info-group mb-3">
+                                    <h4>Account Management</h4>
+                                    <p style="font-size: 0.9rem; color: #dc3545; margin-bottom: 1rem;">
+                                        <strong>⚠️ Warning:</strong> Removing your subscription will permanently delete your account, 
+                                        custom voice, and all associated data. This action cannot be undone.
+                                    </p>
+                                    <button id="remove-subscription-btn" class="btn btn-danger btn-sm">
+                                        <i class="fas fa-trash"></i> Remove Subscription & Delete Account
+                                    </button>
+                                </div>
                                 <div class="info-group"></div>
                             </div>
                         </div>
@@ -211,6 +246,16 @@
                         document.getElementById('subscription-plan').textContent = data.subscription_plan || 'Free';
                         document.getElementById('plan-details').textContent = data.plan_details || 'N/A';
                         document.getElementById('next-billing').textContent = data.next_billing || 'N/A';
+                        
+                        // Update modal based on whether user has a custom voice
+                        const voiceDeletionItem = document.getElementById('voice-deletion-item');
+                        if (voiceDeletionItem) {
+                            if (data.voice_id && data.voice_id.trim() !== '') {
+                                voiceDeletionItem.textContent = 'Delete your custom voice from ElevenLabs';
+                            } else {
+                                voiceDeletionItem.textContent = 'Delete your custom voice from ElevenLabs (not applicable - no custom voice found)';
+                            }
+                        }
                     })
                     .catch(error => {
                         console.error('Error fetching account details:', error);
@@ -272,8 +317,60 @@
                                     btn.textContent = 'Copy Code';
                                 }, 2000);
                             }
+                                                }
+                    });
+
+                    // Add delete account functionality
+                    const deleteBtn = document.getElementById('remove-subscription-btn');
+                    const modal = document.getElementById('delete-account-modal');
+                    const confirmBtn = document.getElementById('confirm-delete-btn');
+                    const cancelBtn = document.getElementById('cancel-delete-btn');
+
+                    deleteBtn.addEventListener('click', () => {
+                        modal.style.display = 'block';
+                    });
+
+                    cancelBtn.addEventListener('click', () => {
+                        modal.style.display = 'none';
+                    });
+
+                    // Close modal when clicking outside of it
+                    window.addEventListener('click', (event) => {
+                        if (event.target === modal) {
+                            modal.style.display = 'none';
                         }
-                                        });
+                    });
+
+                    confirmBtn.addEventListener('click', async () => {
+                        confirmBtn.disabled = true;
+                        confirmBtn.textContent = 'Deleting...';
+                        
+                        try {
+                            const response = await fetch('/delete-account', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                },
+                                credentials: 'include'
+                            });
+
+                            const result = await response.json();
+
+                            if (response.ok) {
+                                alert('Account successfully deleted. You will be redirected to the home page.');
+                                window.location.href = '/';
+                            } else {
+                                alert('Error deleting account: ' + (result.error || 'Unknown error'));
+                                confirmBtn.disabled = false;
+                                confirmBtn.textContent = 'Yes, Delete My Account';
+                            }
+                        } catch (error) {
+                            console.error('Error:', error);
+                            alert('Error deleting account. Please try again.');
+                            confirmBtn.disabled = false;
+                            confirmBtn.textContent = 'Yes, Delete My Account';
+                        }
+                    });
                 }
             })
             .catch(err => {
