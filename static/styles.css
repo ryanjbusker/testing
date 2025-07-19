@@ -150,7 +150,7 @@ body {
 .hero-subtitle {
     font-size: 1.5rem;
     color: var(--text-secondary);
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
 .button-group {
