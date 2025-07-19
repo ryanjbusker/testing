@@ -127,7 +127,7 @@ body {
 .container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 5rem 2rem 2rem; /* Adjust padding to account for fixed navbar */
+    padding: 3rem 2rem 2rem; /* Adjust padding to account for fixed navbar */
     text-align: center;
 }
 
