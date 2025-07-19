@@ -154,6 +154,10 @@ body {
     margin-bottom: 1rem;
 }
 
+.info-section {
+    margin-top: 1rem;
+}
+
 .button-group {
     display: flex;
     gap: 1rem;
