@@ -1005,6 +1005,8 @@ func main() {
 	router.POST("/polly-tts", handlePollyTTS(db))
 	// Add ElevenLabs voice creation endpoint
 	router.POST("/api/create-elevenlabs-voice", handleCreateElevenLabsVoice(db))
+	// Add endpoint to get available voices based on subscription
+	router.GET("/api/available-voices", authMiddleware(db), handleGetAvailableVoices(db))
 
 	// Add delete account endpoint
 	router.POST("/delete-account", authMiddleware(db), handleDeleteAccount(db))
@@ -1977,15 +1979,65 @@ func isPremiumSubscription(planName string) bool {
 	return premiumPlans[planName]
 }
 
+// isProfessionalSubscription checks if the user has a professional or premium subscription
+func isProfessionalSubscription(planName string) bool {
+	// Define professional and premium plans
+	professionalPlans := map[string]bool{
+		"monthly-8":  true, // Professional Monthly
+		"monthly-13": true, // Premium Monthly
+		"yearly-100": true, // Professional Yearly
+		"yearly-150": true, // Premium Yearly
+	}
+
+	return professionalPlans[planName]
+}
+
+// getAvailableVoices returns available voices based on subscription tier
+func getAvailableVoices(planName string, userVoiceID string) map[string]interface{} {
+	voices := make(map[string]interface{})
+
+	if isPremiumSubscription(planName) {
+		// Premium users get all options - using ElevenLabs voice IDs
+		voices["male"] = map[string]string{
+			"default": "pqHfZKP75CvOlQylNhV4", // Male voice ID
+		}
+		voices["female"] = map[string]string{
+			"default": "XrExE9yKIg1WjnnlVkGX", // Female voice ID
+		}
+		// Add custom voice if available
+		if userVoiceID != "" {
+			voices["custom"] = map[string]string{
+				"custom": userVoiceID,
+			}
+		}
+	} else if isProfessionalSubscription(planName) {
+		// Professional users get male/female options but no custom voice
+		voices["male"] = map[string]string{
+			"default": "pqHfZKP75CvOlQylNhV4", // Male voice ID
+		}
+		voices["female"] = map[string]string{
+			"default": "XrExE9yKIg1WjnnlVkGX", // Female voice ID
+		}
+	} else {
+		// Starter users get default female voices only
+		voices["female"] = map[string]string{
+			"default": "XrExE9yKIg1WjnnlVkGX", // Female voice ID
+		}
+	}
+
+	return voices
+}
+
 func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		log.Println("=== TTS ENDPOINT CALLED ===")
 
 		var req struct {
-			Text     string `json:"text"`
-			Language string `json:"language"`
-			VoiceId  string `json:"voiceId"`
-			Speed    string `json:"speed"`
+			Text      string `json:"text"`
+			Language  string `json:"language"`
+			VoiceId   string `json:"voiceId"`
+			Speed     string `json:"speed"`
+			VoiceType string `json:"voiceType"` // "male", "female", or "custom"
 		}
 		if err := c.BindJSON(&req); err != nil {
 			log.Printf("Error binding JSON request: %v", err)
@@ -1993,7 +2045,7 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		log.Printf("TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
+		log.Printf("TTS Request - Text: %q, Language: %s, VoiceID: %s, VoiceType: %s", req.Text, req.Language, req.VoiceId, req.VoiceType)
 
 		// Get user's subscription information
 		var planName string
@@ -2015,25 +2067,39 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 		var err error
 		var serviceUsed string
 
-		if isPremiumSubscription(planName) {
-			// Premium users get ElevenLabs (better quality)
-			log.Printf("Using ElevenLabs TTS for premium user with plan: %s", planName)
+		// Determine voice ID based on subscription and voice type
+		var selectedVoiceID string
 
-			voiceID := userVoiceID
-			if voiceID == "" {
-				voiceID = os.Getenv("ELEVENLABS_DEFAULT_VOICE_ID")
-				if voiceID == "" {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "VoiceId is required and no default is set"})
-					return
+		if isPremiumSubscription(planName) || isProfessionalSubscription(planName) {
+			// Premium and Professional users use ElevenLabs
+			availableVoices := getAvailableVoices(planName, userVoiceID)
+
+			if isPremiumSubscription(planName) && req.VoiceType == "custom" && userVoiceID != "" {
+				// Premium users can use their custom voice
+				selectedVoiceID = userVoiceID
+				audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
+				serviceUsed = "ElevenLabs (Custom Voice)"
+			} else {
+				// Use male or female ElevenLabs voices
+				if req.VoiceType == "male" && isProfessionalSubscription(planName) {
+					if maleVoices, ok := availableVoices["male"].(map[string]string); ok {
+						selectedVoiceID = maleVoices["default"]
+					}
+				} else {
+					// Default to female voice
+					if femaleVoices, ok := availableVoices["female"].(map[string]string); ok {
+						selectedVoiceID = femaleVoices["default"]
+					}
 				}
+
+				audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
+				serviceUsed = "ElevenLabs"
 			}
-
-			audio, err = translation.SynthesizeSpeech(req.Text, voiceID, req.Language)
-			serviceUsed = "ElevenLabs"
 		} else {
-			// Regular users get AWS Polly
-			log.Printf("Using AWS Polly TTS for regular user with plan: %s", planName)
+			// Starter users get AWS Polly with default female voice
+			log.Printf("Using AWS Polly TTS for starter user with plan: %s", planName)
 
+			// Use default Polly voice for the language (Joanna for English, etc.)
 			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, req.VoiceId, req.Speed)
 			serviceUsed = "AWS Polly"
 		}
@@ -2162,6 +2228,40 @@ func createSubscriptionForPlan(db *sql.DB, speaker *Speaker, plan, paymentMethod
 	speaker.PaymentStatus = "active"
 
 	return nil
+}
+
+func handleGetAvailableVoices(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get user from session
+		session, _ := store.Get(c.Request, "session-name")
+		googleSub, ok := session.Values["google_sub"].(string)
+		if !ok {
+			c.JSON(401, gin.H{"error": "Not authenticated"})
+			return
+		}
+
+		// Get user's plan and voice_id from database
+		var planName, userVoiceID string
+		err := db.QueryRow("SELECT plan_name, voice_id FROM speakers WHERE google_id = $1", googleSub).Scan(&planName, &userVoiceID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				c.JSON(404, gin.H{"error": "User not found"})
+				return
+			}
+			log.Printf("Error getting user subscription info: %v", err)
+			c.JSON(500, gin.H{"error": "Database error"})
+			return
+		}
+
+		// Get available voices based on subscription tier
+		voices := getAvailableVoices(planName, userVoiceID)
+
+		c.JSON(200, gin.H{
+			"voices":           voices,
+			"plan":             planName,
+			"has_custom_voice": userVoiceID != "",
+		})
+	}
 }
 
 func handleCreateElevenLabsVoice(db *sql.DB) gin.HandlerFunc {

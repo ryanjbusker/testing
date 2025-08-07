@@ -99,6 +99,11 @@
         <option value="1.5">1.5x</option>
         <option value="2.0">2x</option>
       </select>
+      <select id="voiceType" class="form-control" style="display: none;">
+        <option value="female">Female Voice (ElevenLabs)</option>
+        <option value="male">Male Voice (ElevenLabs)</option>
+        <option value="custom" style="display: none;">My Custom Voice (ElevenLabs)</option>
+      </select>
       <button id="connectToggleButton" class="button">Connect to Stream</button>
     </div>
   </div>
@@ -110,13 +115,60 @@
     const connectButton = document.getElementById('connectToggleButton');
     const translatedTextDiv = document.getElementById('translatedText');
     const targetLanguage = document.getElementById('targetLanguage');
+    const voiceTypeSelect = document.getElementById('voiceType');
     let isConnected = false;
     let audioCtx = null;
     let audioQueue = [];
     let isPlaying = false;
     let currentAudio = null;
+    let availableVoices = {};
+    let userPlan = '';
 
     const subtitleQueue = [];
+
+    // Load available voices based on user's subscription
+    async function loadAvailableVoices() {
+      try {
+        const response = await fetch('/api/available-voices');
+        if (response.ok) {
+          const data = await response.json();
+          availableVoices = data.voices;
+          userPlan = data.plan;
+          
+          // Show voice selection if user has professional or premium subscription
+          if (data.voices.male || data.voices.custom) {
+            voiceTypeSelect.style.display = 'block';
+            
+            // Show/hide custom voice option based on availability
+            const customOption = voiceTypeSelect.querySelector('option[value="custom"]');
+            if (data.has_custom_voice && data.voices.custom) {
+              customOption.style.display = 'block';
+              console.log('Premium user: Custom voice available');
+            } else {
+              customOption.style.display = 'none';
+            }
+            
+            // Show/hide male voice option based on subscription
+            const maleOption = voiceTypeSelect.querySelector('option[value="male"]');
+            if (data.voices.male) {
+              maleOption.style.display = 'block';
+              console.log('Professional/Premium user: Male voice available');
+            } else {
+              maleOption.style.display = 'none';
+            }
+            
+            console.log('Voice selection enabled for plan:', data.plan);
+          } else {
+            console.log('Starter user: Only female voice available');
+          }
+        }
+      } catch (error) {
+        console.log('Could not load voice options:', error);
+      }
+    }
+
+    // Load voices when page loads
+    loadAvailableVoices();
 
     function showSubtitle(text) {
       const wordCount = text.trim().split(/\s+/).length;
@@ -175,22 +227,20 @@
       try {
         const selectedOption = targetLanguage.options[targetLanguage.selectedIndex];
         const label = selectedOption.text;
-        // const response = await fetch('/polly-tts', {
-        //   method: 'POST',
-        //   headers: { 'Content-Type': 'application/json' },
-        //   body: JSON.stringify({ text, language: lang, voiceId: getVoiceId(label) })
-        // });
         const speedSelect = document.getElementById('playbackSpeed');
         const playbackRate = speedSelect.value;
+        const voiceType = voiceTypeSelect.value || 'female'; // Default to female if not selected
+        
         const response = await fetch('/polly-tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             text,
             language: lang,
             voiceId: getVoiceId(label),
-            speed: playbackRate
-            })
+            speed: playbackRate,
+            voiceType: voiceType
+          })
         });
 
 
