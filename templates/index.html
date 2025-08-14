@@ -1,67 +1,3 @@
-<!-- <!DOCTYPE html>
-<html>
-<head>
-    <title>BMM Translation</title>
-    <link rel="stylesheet" href="/static/styles.css">
-</head>
-<body>
-    <nav class="navbar">
-        <div class="nav-content">
-            <a href="/" class="nav-brand">BMM Translation</a>
-            <div class="nav-links">
-                <a href="/">Home</a>
-                <a href="/join">Join</a>
-                <a href="/speaker">Speaker</a>
-                <a href="/audience">Audience</a>
-                <a href="/streams">Active Streams</a>
-                <a href="/contact">Contact</a>
-                <a href="/account">Account</a>
-            </div>
-            <span id="user-email" class="user-email"></span>
-            <a id="login-btn" href="/login" class="auth-button">Sign In</a>
-            <a id="logout-btn" href="/logout" class="auth-button" style="display: none;">Logout</a>
-        </div>
-    </nav>
-    
-    <div class="container">
-        <div class="hero-section">
-            <h1 class="hero-title">BMM Translation</h1>
-            <p class="hero-subtitle">Real-time translation for seamless communication</p>
-            <div class="button-group">
-                <a href="/speaker" class="button">I'm a Speaker</a>
-                <a href="/audience" class="button">I'm in the Audience</a>
-            </div>
-        </div>
-    </div>
-    <script>
-        const loginBtn = document.getElementById("login-btn");
-        const logoutBtn = document.getElementById("logout-btn");
-        const emailSpan = document.getElementById("user-email");
-    
-        // Redirect back to the same page after login
-        if (loginBtn) {
-        loginBtn.href = `/login?from=${encodeURIComponent(window.location.pathname)}`;
-        }
-    
-        fetch("/session")
-        .then(res => res.json())
-        .then(data => {
-            if (data.email) {
-            emailSpan.textContent = data.email;
-            loginBtn.style.display = "none";
-            logoutBtn.style.display = "inline";
-            } else {
-            loginBtn.style.display = "inline";
-            logoutBtn.style.display = "none";
-            emailSpan.textContent = "";
-            }
-        });
-    </script>
-</body>
-</html> -->
-  
-
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -74,7 +10,6 @@
             <a href="/" class="nav-brand">BMM Translation</a>
             <div class="nav-links">
                 <!-- <a href="/">Home</a> -->
-                <a href="/join">Join</a>
                 <a href="/speaker">Speaker</a>
                 <a href="/audience">Audience</a>
                 <a href="/streams">Active Streams</a>
@@ -88,51 +23,147 @@
     </nav>
     
     <div class="container">
-        <div class="hero-section">
-            <h1 class="hero-title">BMM Translation</h1>
-            <p class="hero-subtitle">Real-time translation for seamless communication</p>
-            <div class="button-group">
-                <a href="/speaker" class="button">I'm a Speaker</a>
-                <a href="/audience" class="button">I'm in the Audience</a>
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">BMM Translation</h1>
+                <p class="hero-subtitle">Real-time translation for seamless communication</p>
+                <div class="button-group">
+                    <a href="/join" class="button join-button">Join Us</a>
+                </div>
             </div>
-        <!-- </div> -->
-            <div class="info-section">
-                <p><strong>BMM Translations</strong> is a real-time, browser-based translation platform designed to empower organizations of all sizes to reach multilingual audiences—without the need for expensive hardware, complex installations, or high licensing fees.</p>
+        </section>
 
-                <p>Whether you're hosting events, services, workshops, or conferences, BMM Translations makes it easy to connect speakers and listeners across languages through live audio and text translations.</p>
+        <!-- About Section -->
+        <section class="about-section">
+            <div class="content-block about-block">
+                <h2 class="section-title">About BMM Translations</h2>
+                <div class="about-content">
+                    <p><strong>BMM Translations</strong> is a real-time, browser-based translation platform designed to empower organizations of all sizes to reach multilingual audiences—without the need for expensive hardware, complex installations, or high licensing fees.</p>
 
-                <h3>What We Offer</h3>
-                <ul>
-                    <li><strong>Live Translation in Real Time:</strong> Our system captures speech from presenters and delivers accurate, sentence-level translations to audience members within moments.</li>
-                    <li><strong>Large Audience Support:</strong> Capable of supporting hundreds of concurrent users across multiple devices without sacrificing performance.</li>
-                    <li><strong>No App Required:</strong> Both speakers and audience members join directly through their browsers. No downloads, no setup—just a link or QR code.</li>
-                    <li><strong>Quick Listener Access:</strong> Audience members can join sessions effortlessly via QR codes or custom links generated by the speaker.</li>
-                </ul>
-
-                <h3>Current Limitations of Our Early Release</h3>
-                <p>BMM Translations is currently in its <strong>Limited Viable Product (LVP)</strong> phase. While the system is fully functional, we are actively refining and updating the software.</p>
-
-                <h3>Languages Supported (39 Dialects, 24 Languages)</h3>
-                <p>
-                    English, Arabic, Catalan, Chinese (Cantonese & Mandarin), Czech, Danish, Dutch (Netherlands & Belgium),
-                    Finnish, French (France, Belgium, Canada), German (Standard, Austrian, Swiss), Hindi, Icelandic, Italian,
-                    Japanese, Korean, Norwegian, Polish, Portuguese (Brazil & Portugal), Romanian, Russian, Spanish (Spain, Mexico, U.S.),
-                    Swedish, Turkish, Welsh
-                </p>
-
-                <h3>Looking for Partners</h3>
-                <p>As we continue to grow, we are actively seeking <strong>early client partners</strong> willing to provide feedback. In return, you'll help shape a translation platform built around your real-world needs and workflows.</p>
-
-                <p>If your organization is ready for a more accessible, high-quality translation solution—we’d love to show you what BMM Translations can do.</p>
-
-                <p><strong>Let’s bridge the language gap—together.</strong></p>
-
-                <p>
-                    For demos, onboarding, or questions:<br>
-                    <strong>Contact us at</strong> <a> bmmtranslate@gmail.com</a>
-                </p>
+                    <p>Whether you're hosting events, services, workshops, or conferences, BMM Translations makes it easy to connect speakers and listeners across languages through live audio and text translations.</p>
+                </div>
             </div>
-        </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="features-section">
+            <div class="content-block features-block">
+                <h2 class="section-title">What We Offer</h2>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">👥</div>
+                        <h3>Large Audience Support</h3>
+                        <p>Capable of supporting hundreds of concurrent users across multiple devices without sacrificing performance.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🌐</div>
+                        <h3>No App Required</h3>
+                        <p>Both speakers and audience members join directly through their browsers. No downloads, no setup—just a link or QR code.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📱</div>
+                        <h3>Quick Listener Access</h3>
+                        <p>Audience members can join sessions effortlessly via QR codes or custom links generated by the speaker.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Why Us Section -->
+        <section class="why-us-section">
+            <div class="content-block why-us-block">
+                <h2 class="section-title">Why Choose BMM Translations?</h2>
+                <div class="why-us-grid">
+                    <div class="why-us-card">
+                        <div class="why-us-icon">🎯</div>
+                        <h3>Quality Range Options</h3>
+                        <p>We offer a variety of quality ranges to meet anyone's needs. From budget-friendly solutions to premium sounding transcriptions, we have options that fit every organization's requirements and budget.</p>
+                    </div>
+                    <div class="why-us-card">
+                        <div class="why-us-icon">✅</div>
+                        <h3>Thoroughly Tested Accuracy</h3>
+                        <p>Our translation technology has been extensively tested for accuracy across multiple languages and dialects. We continuously refine our algorithms to ensure the highest quality translations for your audience.</p>
+                    </div>
+                    <div class="why-us-card">
+                        <div class="why-us-icon">⚙️</div>
+                        <h3>Customizable Plans</h3>
+                        <p>No two organizations are the same. That's why we offer customizable plans that adapt to your specific needs. Whether you need short-term event support or long-term partnership solutions, we can tailor our services to you.</p>
+                    </div>
+                    <div class="why-us-card">
+                        <div class="why-us-icon">🔄</div>
+                        <h3>Flexible Solutions</h3>
+                        <p>We understand that requirements change. Our flexible platform can adapt to your evolving needs, whether that's scaling up for large events or adjusting language support for different audiences.</p>
+                    </div>
+                    <div class="why-us-card">
+                        <div class="why-us-icon">🎧</div>
+                        <h3>Unparalleled Customer Support</h3>
+                        <p>When you choose BMM Translations, you're not just getting a translation service—you're getting a dedicated partner. Our customer support team is available to help with setup, troubleshooting, and ongoing optimization.</p>
+                    </div>
+                    <div class="why-us-card">
+                        <div class="why-us-icon">🤖</div>
+                        <h3>AI-Powered Voice Translation</h3>
+                        <p>Audience members can hear the speaker's translated voice in their own language in near real time—thanks to AI-powered speech recognition, translation, and natural-sounding speech synthesis.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Limitations Section -->
+        <section class="limitations-section">
+            <div class="content-block warning-block">
+                <h2 class="section-title">Current Limitations</h2>
+                <div class="limitations-content">
+                    <p>BMM Translations is currently in its <strong>Limited Viable Product (LVP)</strong> phase. While the system is fully functional, we are actively refining and updating the software.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Languages Section -->
+        <section class="languages-section">
+            <div class="content-block">
+                <h2 class="section-title">Languages Supported</h2>
+                <div class="languages-content">
+                    <p class="languages-subtitle">39 Dialects, 24 Languages</p>
+                    <div class="languages-grid">
+                        <p>
+                            English, Arabic, Catalan, Chinese (Cantonese & Mandarin), Czech, Danish, Dutch (Netherlands & Belgium),
+                            Finnish, French (France, Belgium, Canada), German (Standard, Austrian, Swiss), Hindi, Icelandic, Italian,
+                            Japanese, Korean, Norwegian, Polish, Portuguese (Brazil & Portugal), Romanian, Russian, Spanish (Spain, Mexico, U.S.),
+                            Swedish, Turkish, Welsh
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Partners Section -->
+        <section class="partners-section">
+            <div class="content-block highlight-block">
+                <h2 class="section-title">Looking for Partners</h2>
+                <div class="partners-content">
+                    <p>As we continue to grow, we are actively seeking <strong>early client partners</strong> willing to provide feedback. In return, you'll help shape a translation platform built around your real-world needs and workflows.</p>
+
+                    <p>If your organization is ready for a more accessible, high-quality translation solution—we'd love to show you what BMM Translations can do.</p>
+
+                    <p class="partners-cta"><strong>Let's bridge the language gap—together.</strong></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Contact Section -->
+        <section class="contact-section">
+            <div class="content-block contact-block">
+                <h2 class="section-title">Get In Touch</h2>
+                <div class="contact-content">
+                    <p>For demos, onboarding, or questions:</p>
+                    <div class="contact-info">
+                        <strong>Contact us at:</strong> <a href="mailto:bmmtranslate@gmail.com" class="contact-email">bmmtranslate@gmail.com</a>
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
 
     <script>

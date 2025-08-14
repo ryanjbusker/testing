@@ -479,7 +479,25 @@ type SpeakingSession struct {
 func StartSpeakingSession(db *sql.DB, speakerID int, speakerName, googleSub string) (int, error) {
 	var sessionID int
 	log.Printf("Starting new speaking session for speaker ID: %d, name: %s, google_sub: %s", speakerID, speakerName, googleSub)
+
+	// Check for any existing unclosed sessions for this speaker
+	var existingSessionID int
 	err := db.QueryRow(`
+		SELECT id FROM speaking_sessions 
+		WHERE speaker_id = $1 AND session_end IS NULL
+		ORDER BY session_start DESC LIMIT 1
+	`, speakerID).Scan(&existingSessionID)
+
+	if err == nil {
+		log.Printf("Found existing unclosed session ID %d for speaker %d, closing it first", existingSessionID, speakerID)
+		if err := EndSpeakingSession(db, existingSessionID); err != nil {
+			log.Printf("Warning: Failed to close existing session %d: %v", existingSessionID, err)
+		}
+	} else if err != sql.ErrNoRows {
+		log.Printf("Error checking for existing sessions: %v", err)
+	}
+
+	err = db.QueryRow(`
 		INSERT INTO speaking_sessions 
 		(speaker_id, speaker_name, google_sub, session_start)
 		VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
@@ -488,7 +506,7 @@ func StartSpeakingSession(db *sql.DB, speakerID int, speakerName, googleSub stri
 	if err != nil {
 		log.Printf("Error creating speaking session: %v", err)
 	} else {
-		log.Printf("Successfully created speaking session with ID: %d", sessionID)
+		log.Printf("Successfully created speaking session with ID: %d for billing tracking", sessionID)
 	}
 	return sessionID, err
 }
@@ -1166,33 +1184,46 @@ func main() {
 		}
 
 		var stats struct {
-			SpeakerName  string  `json:"speaker_name"`
-			Email        string  `json:"email"`
-			TotalSeconds float64 `json:"total_seconds"`
-			TotalHours   float64 `json:"total_hours"`
-			SessionCount int     `json:"session_count"`
+			SpeakerName          string  `json:"speaker_name"`
+			Email                string  `json:"email"`
+			TotalSeconds         float64 `json:"total_seconds"`
+			TotalHours           float64 `json:"total_hours"`
+			SessionCount         int     `json:"session_count"`
+			CurrentMonthSeconds  float64 `json:"current_month_seconds"`
+			CurrentMonthHours    float64 `json:"current_month_hours"`
+			CurrentMonthSessions int     `json:"current_month_sessions"`
+			PlanName             string  `json:"plan_name"`
+			SubscriptionStatus   string  `json:"subscription_status"`
 		}
 
+		// Get overall stats
 		err := db.QueryRow(`
 			SELECT 
 				s.name as speaker_name,
 				s.email,
+				s.plan_name,
+				s.payment_status,
 				SUM(EXTRACT(EPOCH FROM (COALESCE(ss.session_end, CURRENT_TIMESTAMP) - ss.session_start))) as total_seconds,
 				COUNT(*) as session_count
 			FROM speaking_sessions ss
 			JOIN speakers s ON ss.speaker_id = s.id
 			WHERE s.google_id = $1
-			GROUP BY s.name, s.email
-		`, googleSub).Scan(&stats.SpeakerName, &stats.Email, &stats.TotalSeconds, &stats.SessionCount)
+			GROUP BY s.name, s.email, s.plan_name, s.payment_status
+		`, googleSub).Scan(&stats.SpeakerName, &stats.Email, &stats.PlanName, &stats.SubscriptionStatus, &stats.TotalSeconds, &stats.SessionCount)
 
 		if err != nil {
 			if err == sql.ErrNoRows {
 				c.JSON(http.StatusOK, gin.H{
 					"message": "No sessions found",
 					"stats": gin.H{
-						"total_seconds": 0,
-						"total_hours":   0,
-						"session_count": 0,
+						"total_seconds":          0,
+						"total_hours":            0,
+						"session_count":          0,
+						"current_month_seconds":  0,
+						"current_month_hours":    0,
+						"current_month_sessions": 0,
+						"plan_name":              "",
+						"subscription_status":    "",
 					},
 				})
 				return
@@ -1202,14 +1233,35 @@ func main() {
 			return
 		}
 
+		// Get current month stats
+		err = db.QueryRow(`
+			SELECT 
+				SUM(EXTRACT(EPOCH FROM (COALESCE(ss.session_end, CURRENT_TIMESTAMP) - ss.session_start))) as current_month_seconds,
+				COUNT(*) as current_month_sessions
+			FROM speaking_sessions ss
+			JOIN speakers s ON ss.speaker_id = s.id
+			WHERE s.google_id = $1
+			AND ss.session_start >= DATE_TRUNC('month', CURRENT_DATE)
+		`, googleSub).Scan(&stats.CurrentMonthSeconds, &stats.CurrentMonthSessions)
+
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("Error getting current month stats: %v", err)
+		}
+
 		stats.TotalHours = stats.TotalSeconds / 3600
+		stats.CurrentMonthHours = stats.CurrentMonthSeconds / 3600
 
 		c.JSON(http.StatusOK, gin.H{
-			"speaker_name":  stats.SpeakerName,
-			"email":         stats.Email,
-			"total_seconds": stats.TotalSeconds,
-			"total_hours":   stats.TotalHours,
-			"session_count": stats.SessionCount,
+			"speaker_name":           stats.SpeakerName,
+			"email":                  stats.Email,
+			"total_seconds":          stats.TotalSeconds,
+			"total_hours":            stats.TotalHours,
+			"session_count":          stats.SessionCount,
+			"current_month_seconds":  stats.CurrentMonthSeconds,
+			"current_month_hours":    stats.CurrentMonthHours,
+			"current_month_sessions": stats.CurrentMonthSessions,
+			"plan_name":              stats.PlanName,
+			"subscription_status":    stats.SubscriptionStatus,
 		})
 	})
 
