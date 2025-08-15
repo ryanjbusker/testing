@@ -1021,6 +1021,8 @@ func main() {
 
 	// Add Polly TTS endpoint
 	router.POST("/polly-tts", handlePollyTTS(db))
+	// Add demo TTS endpoint for voice cloning demos
+	router.POST("/demo-tts", handleDemoTTS(db))
 	// Add ElevenLabs voice creation endpoint
 	router.POST("/api/create-elevenlabs-voice", handleCreateElevenLabsVoice(db))
 	// Add endpoint to get available voices based on subscription
@@ -1328,11 +1330,11 @@ func main() {
 		log.Printf("Session email: %s", sessionEmail)
 
 		var joinRequest struct {
-			Name              string `json:"name"`
-			Email             string `json:"email"`
-			PreferredLanguage string `json:"preferred_language"`
-			Plan              string `json:"plan"`
-			PaymentMethodID   string `json:"payment_method_id"`
+			Name            string `json:"name"`
+			Email           string `json:"email"`
+			Plan            string `json:"plan"`
+			Voice           string `json:"voice"`
+			PaymentMethodID string `json:"payment_method_id"`
 		}
 
 		if err := c.BindJSON(&joinRequest); err != nil {
@@ -1349,7 +1351,7 @@ func main() {
 		}
 
 		// Validate required fields
-		if joinRequest.Name == "" || joinRequest.Email == "" || joinRequest.PreferredLanguage == "" || joinRequest.Plan == "" {
+		if joinRequest.Name == "" || joinRequest.Email == "" || joinRequest.Plan == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "All fields are required"})
 			return
 		}
@@ -1432,7 +1434,6 @@ func main() {
 
 		// Note: Preferred language is stored in the join request but not currently used
 		// Could be added to speakers table later if needed
-		log.Printf("User selected preferred language: %s", joinRequest.PreferredLanguage)
 
 		// Create Stripe customer and subscription
 		speaker := &Speaker{
@@ -2179,6 +2180,51 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 
 		log.Printf("Successfully streamed audio to client using %s", serviceUsed)
 		log.Println("=== TTS ENDPOINT COMPLETED ===")
+	}
+}
+
+func handleDemoTTS(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		log.Println("=== DEMO TTS ENDPOINT CALLED ===")
+
+		var req struct {
+			Text     string `json:"text"`
+			Language string `json:"language"`
+			VoiceId  string `json:"voiceId"`
+		}
+		if err := c.BindJSON(&req); err != nil {
+			log.Printf("Error binding JSON request: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+			return
+		}
+
+		log.Printf("Demo TTS Request - Text: %q, Language: %s, VoiceID: %s", req.Text, req.Language, req.VoiceId)
+
+		// For demo purposes, always use ElevenLabs with the provided voice ID
+		audio, err := translation.SynthesizeSpeech(req.Text, req.VoiceId, req.Language)
+		if err != nil {
+			log.Printf("Error synthesizing speech with ElevenLabs: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to synthesize speech"})
+			return
+		}
+
+		log.Printf("Successfully received response from ElevenLabs (Demo)")
+
+		// Set headers for audio streaming
+		c.Header("Content-Type", "audio/mpeg")
+		c.Header("Content-Disposition", "attachment; filename=demo_speech.mp3")
+		c.Header("Transfer-Encoding", "chunked")
+
+		// Stream the audio data to the client
+		_, err = c.Writer.Write(audio)
+		if err != nil {
+			log.Printf("Error streaming audio: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stream audio"})
+			return
+		}
+
+		log.Printf("Successfully streamed demo audio to client using ElevenLabs")
+		log.Println("=== DEMO TTS ENDPOINT COMPLETED ===")
 	}
 }
 

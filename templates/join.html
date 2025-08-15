@@ -563,6 +563,400 @@
             margin-top: 0.5rem;
         }
 
+        /* Custom Plan Section Styles */
+        .custom-plan-section {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #f8f9fa;
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .custom-plan-section h4 {
+            color: #007bff;
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+        }
+
+        .custom-plan-section p {
+            color: #333;
+            margin-bottom: 0.5rem;
+            line-height: 1.5;
+        }
+
+        .custom-plan-section a {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .custom-plan-section a:hover {
+            text-decoration: underline;
+        }
+
+        /* Voice Selection Section Styles */
+        .voice-selection-section {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+        }
+
+        .voice-selection-section h4 {
+            color: #333;
+            margin-bottom: 1rem;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 0.5rem;
+        }
+
+        .voice-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .voice-option {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            background: white;
+        }
+
+        .voice-option:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+        }
+
+        .voice-option.selected {
+            border-color: #007bff;
+            background: #e8f4fd;
+            box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .voice-option.selected::before {
+            content: "✓";
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #007bff;
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .voice-name {
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+
+        .voice-provider {
+            font-size: 0.9rem;
+            color: #666;
+            margin-bottom: 0.5rem;
+        }
+
+        .voice-description {
+            color: #666;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+
+        .voice-price {
+            font-size: 1.1rem;
+            color: #007bff;
+            font-weight: 600;
+        }
+
+        .voice-sample {
+            margin-top: 1rem;
+        }
+
+        .voice-demo {
+            margin-top: 0.75rem;
+        }
+
+        .try-demo-btn {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            width: 100%;
+            font-weight: 600;
+        }
+
+        .try-demo-btn:hover {
+            background: linear-gradient(135deg, #ee5a24 0%, #d63031 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(238, 90, 36, 0.3);
+        }
+
+        .demo-icon {
+            font-size: 1rem;
+        }
+
+        /* Custom Voice Demo Modal Styles */
+        .demo-recording-container {
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .demo-timer {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #007bff;
+            margin: 10px 0;
+        }
+
+        .demo-controls {
+            display: flex;
+            justify-content: center;
+            gap: 0.8rem;
+            margin: 0.5rem 0;
+        }
+
+        .demo-audio-preview {
+            margin: 10px 0;
+        }
+
+        .demo-status {
+            margin: 8px 0;
+            padding: 6px;
+            border-radius: 5px;
+            font-weight: 500;
+        }
+
+        .demo-status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .demo-status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .demo-status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .demo-results {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 2px solid #28a745;
+        }
+
+        .demo-results h4 {
+            color: #28a745;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .demo-comparison {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .demo-original, .demo-cloned {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .demo-original h5, .demo-cloned h5 {
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .demo-text-note {
+            color: #666;
+            font-style: italic;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            line-height: 1.3;
+        }
+
+        .demo-note {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .demo-note p {
+            color: #856404;
+            margin: 0;
+            font-size: 0.9rem;
+        }
+
+        .demo-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin: 1.5rem 0;
+            flex-wrap: wrap;
+        }
+
+        .demo-actions .btn {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .action-icon {
+            font-size: 1.1rem;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+
+        .play-sample-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            width: 100%;
+        }
+
+        .play-sample-btn:hover {
+            background: #218838;
+            transform: translateY(-1px);
+        }
+
+        .play-sample-btn.playing {
+            background: #dc3545;
+        }
+
+        .play-sample-btn.playing:hover {
+            background: #c82333;
+        }
+
+        .play-icon, .pause-icon {
+            font-size: 0.8rem;
+        }
+
+        .play-sample-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+
+
+        /* Custom Voice Showcase Styles */
+        .custom-voice-showcase {
+            margin-top: 2rem;
+            padding: 1.5rem;
+            background: linear-gradient(135deg, #e8f5e8 0%, #d4edda 100%);
+            border: 2px solid #28a745;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .custom-voice-showcase h4 {
+            color: #28a745;
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+        }
+
+        .voice-showcase-demo {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .showcase-card {
+            background: white;
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .showcase-card h5 {
+            color: #333;
+            margin-bottom: 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .voice-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            background: white;
+            border: 1px solid #28a745;
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-size: 0.9rem;
+            color: #333;
+        }
+
+        .stat-icon {
+            font-size: 1.2rem;
+        }
+
         /* Additional text color fixes */
         .plan-name {
             color: #333 !important;
@@ -638,34 +1032,7 @@
                         <input type="email" id="email" name="email" required readonly>
                         <small style="color: #666;">This is your Google account email and cannot be changed</small>
                     </div>
-                    <div class="form-group">
-                        <label for="preferred-language">Preferred Language *</label>
-                        <select id="preferred-language" name="preferred_language" required>
-                            <option value="">Select your preferred language</option>
-                            <option value="en-US">English (US)</option>
-                            <option value="en-GB">English (UK)</option>
-                            <option value="en-AU">English (Australia)</option>
-                            <option value="es-ES">Spanish (Spain)</option>
-                            <option value="es-MX">Spanish (Mexico)</option>
-                            <option value="fr-FR">French</option>
-                            <option value="de-DE">German</option>
-                            <option value="it-IT">Italian</option>
-                            <option value="pt-BR">Portuguese (Brazil)</option>
-                            <option value="ja-JP">Japanese</option>
-                            <option value="ko-KR">Korean</option>
-                            <option value="zh-CN">Chinese (Mandarin)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <!-- Speaker Code Section -->
-                <div class="form-section">
-                    <h3>Your Speaker Code</h3>
-                    <div class="speaker-code-display">
-                        <div>Your unique 5-digit speaker code:</div>
-                        <div class="speaker-code" id="speaker-code">-----</div>
-                        <small>This code will be generated automatically when you complete registration</small>
-                    </div>
+                    
                 </div>
 
                 <!-- Payment Plan Section -->
@@ -675,58 +1042,112 @@
                     <div class="plan-options">
                         <div class="plan-option" data-plan="monthly-5">
                             <div class="plan-name">Starter Monthly</div>
-                            <div class="plan-price">$350/month</div>
+                            <div class="plan-price">8 Hours/month</div>
                             <div class="plan-description">
-                                5 hours per month<br>
-                                $70/hour rate<br>
-                                Perfect for beginners
-                            </div>
-                        </div>
-                        <div class="plan-option" data-plan="monthly-8">
-                            <div class="plan-name">Professional Monthly</div>
-                            <div class="plan-price">$480/month</div>
-                            <div class="plan-description">
-                                8 hours per month<br>
-                                $60/hour rate<br>
-                                Great for regular speakers
+                                <br>
+                                $50/hour rate<br>
                             </div>
                         </div>
                         <div class="plan-option" data-plan="monthly-13">
                             <div class="plan-name">Premium Monthly</div>
-                            <div class="plan-price">$650/month</div>
+                            <div class="plan-price">50 Hours/year</div>
                             <div class="plan-description">
-                                13 hours per month<br>
+                               <br>
                                 $50/hour rate<br>
-                                For active speakers
                             </div>
                         </div>
                         <div class="plan-option" data-plan="yearly-50">
                             <div class="plan-name">Starter Yearly</div>
-                            <div class="plan-price">$2,500/year</div>
+                            <div class="plan-price">100 Hours/year</div>
                             <div class="plan-description">
-                                50 hours per year<br>
+                                <br>
                                 $50/hour rate<br>
-                                Save 17% vs monthly
                             </div>
                         </div>
                         <div class="plan-option" data-plan="yearly-100">
                             <div class="plan-name">Professional Yearly</div>
-                            <div class="plan-price">$4,000/year</div>
+                            <div class="plan-price">150 Hours/year</div>
                             <div class="plan-description">
-                                100 hours per year<br>
-                                $40/hour rate<br>
-                                Save 17% vs monthly
+                                <br>
+                                $50/hour rate<br>
                             </div>
                         </div>
                         <div class="plan-option" data-plan="yearly-150">
-                            <div class="plan-name">Premium Yearly</div>
-                            <div class="plan-price">$4,500/year</div>
+                            <div class="plan-name">Just in Case</div>
+                            <div class="plan-price">8 Hours/year </div>
                             <div class="plan-description">
-                                150 hours per year<br>
-                                $30/hour rate<br>
-                                Best value for professionals
+                                <br>
+                                $50/hour rate<br>
                             </div>
                         </div>
+                    </div>
+                    
+                    <!-- Custom Plan Section -->
+                    <div class="custom-plan-section">
+                        <h4>Need a Custom Plan?</h4>
+                        <p>If none of the above plans fit your needs, we can create a custom plan just for you.</p>
+                        <p>Reach out to us at <a href="mailto:support@bmmtranslation.com">support@bmmtranslation.com</a> to discuss your requirements and we'll be happy to help you find the perfect solution.</p>
+                    </div>
+
+                    <!-- Voice Selection Section -->
+                    <div class="voice-selection-section">
+                        <h4>Choose Your Voice Quality</h4>
+                        <p style="color: #666; margin-bottom: 1rem;">Select the voice quality that best fits your needs:</p>
+                        <div class="voice-options">
+                            <div class="voice-option" data-voice="polly">
+                                <div class="voice-name">Standard Voice</div>
+                                <div class="voice-description">
+                                    High-quality AI voice with natural pronunciation
+                                </div>
+                                <div class="voice-price">Included</div>
+                                <div class="voice-sample">
+                                    <button class="play-sample-btn" data-voice="polly">
+                                        <span class="play-icon">▶</span>
+                                        <span class="pause-icon" style="display: none;">⏸</span>
+                                        Listen to Sample
+                                    </button>
+                                    <audio id="polly-sample" preload="none">
+                                        <source src="/static/samples/polly.mp3" type="audio/mpeg">
+                                    </audio>
+                                </div>
+                            </div>
+                            <div class="voice-option" data-voice="elevenlabs">
+                                <div class="voice-name">Premium Voice</div>
+                                <div class="voice-description">
+                                    Ultra-realistic voice with emotional expression
+                                </div>
+                                <div class="voice-price">+$15/hour</div>
+                                <div class="voice-sample">
+                                    <button class="play-sample-btn" data-voice="elevenlabs">
+                                        <span class="play-icon">▶</span>
+                                        <span class="pause-icon" style="display: none;">⏸</span>
+                                        Listen to Sample
+                                    </button>
+                                    <audio id="elevenlabs-sample" preload="none">
+                                        <source src="/static/samples/elevenlabs.mp3" type="audio/mpeg">
+                                    </audio>
+                                </div>
+                            </div>
+                            <div class="voice-option" data-voice="custom">
+                                <div class="voice-name">Premium + Custom Voice</div>
+                                <div class="voice-description">
+                                    Premium plus the ability to clone your voice for personalized translations
+                                </div>
+                                <div class="voice-price">+$20/hour</div>
+                                
+                                
+                                <div class="voice-demo">
+                                    <button class="try-demo-btn" onclick="showCustomVoiceDemo()">
+                                        <span class="demo-icon">🎤</span>
+                                        Try Demo
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <input type="hidden" id="selected-voice" name="voice" value="polly">
+                    </div>
+
+
                     </div>
                     <input type="hidden" id="selected-plan" name="plan" value="">
                 </div>
@@ -779,11 +1200,38 @@
                 <small>Scan this QR code to join your audience page</small>
             </div>
 
-            <!-- Voice Recording Section for Premium Plans -->
-            <div id="voice-recording-section" class="voice-recording-section" style="display: none;">
-                <h4>🎤 Record Your Custom Voice</h4>
-                <p>As a premium subscriber, you can create a custom voice for your translations. Record 30 seconds of clear speech to get started.</p>
-                <button onclick="showVoiceRecordingModal()" class="btn btn-primary">Record My Voice</button>
+
+
+            <!-- Custom Voice Showcase Section -->
+            <div id="custom-voice-showcase" class="custom-voice-showcase" style="display: none;">
+                <h4>🎤 Your Custom Voice is Ready!</h4>
+                <p>Listen to how your voice will sound in translations:</p>
+                
+                <div class="voice-showcase-demo">
+                    <div class="showcase-card">
+                        <h5>Your Original Recording</h5>
+                        <div id="original-recording-player"></div>
+                    </div>
+                    <div class="showcase-card">
+                        <h5>Your Cloned Voice</h5>
+                        <div id="cloned-voice-player"></div>
+                    </div>
+                </div>
+                
+                <div class="voice-stats">
+                    <div class="stat-item">
+                        <span class="stat-icon">✅</span>
+                        <span>Voice cloned successfully</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-icon">🎯</span>
+                        <span>Ready for use in all translations</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-icon">🔒</span>
+                        <span>Your voice data is secure</span>
+                    </div>
+                </div>
             </div>
 
             <div class="action-buttons">
@@ -814,6 +1262,55 @@
                     <button id="voice-uploadBtn" class="btn btn-success" disabled>Create My Voice</button>
                 </div>
                 <div class="status" id="voice-status"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Voice Demo Modal -->
+    <div id="custom-voice-demo-modal" class="voice-recording-modal">
+        <div class="voice-recording-modal-content">
+            <span class="close-modal" onclick="closeCustomVoiceDemoModal()">&times;</span>
+            
+            <h2 style="margin-bottom: 10px;">🎤 Try Custom Voice Demo</h2>
+            <p style="margin-bottom: 15px;">Experience the custom voice feature! Record a short sample and hear how it would sound in translations.</p>
+            
+            <div class="demo-recording-container">
+                <div class="demo-timer" id="demo-timer">00:00</div>
+                <div class="demo-controls">
+                    <button id="demo-startBtn" class="btn btn-primary">Start Recording</button>
+                </div>
+                <div class="demo-audio-preview" id="demo-audioPreview"></div>
+
+                <div class="demo-status" id="demo-status"></div>
+                
+                <!-- Demo Results Section -->
+                <div class="demo-results" id="demo-results" style="display: none;">
+                    <h4>🎉 Demo Results</h4>
+                                    <div class="demo-comparison">
+                                        <div class="demo-cloned">
+                        <h5>Your Cloned Voice</h5>
+                        <p class="demo-text-note">"Welcome to our translation service. This is how your voice would sound in any language. Enhance your audience's experience by allowing them to hear your voice in their own language!"</p>
+                        <div id="demo-cloned-player"></div>
+                    </div>
+                </div>
+                <div class="demo-actions">
+                    <button class="btn btn-success" onclick="keepDemoVoice()">
+                        <span class="action-icon">✅</span>
+                        Keep This Voice
+                    </button>
+                    <button class="btn btn-warning" onclick="retryDemoVoice()">
+                        <span class="action-icon">🔄</span>
+                        Try Again
+                    </button>
+                    <button class="btn btn-secondary" onclick="passDemoVoice()">
+                        <span class="action-icon">⏭️</span>
+                        Skip for Now
+                    </button>
+                </div>
+                <div class="demo-note">
+                    <p><strong>🎯 Notice the difference!</strong> Your cloned voice is saying completely different text, proving the AI captured your unique voice characteristics. If you like how it sounds, you can keep this voice for your account!</p>
+                </div>
+                </div>
             </div>
         </div>
     </div>
@@ -894,6 +1391,93 @@
             });
         });
 
+        // Voice selection
+        const voiceOptions = document.querySelectorAll('.voice-option');
+        const selectedVoiceInput = document.getElementById('selected-voice');
+
+        console.log('Found voice options:', voiceOptions.length);
+
+        voiceOptions.forEach(option => {
+            option.addEventListener('click', function() {
+                console.log('Voice clicked:', this.dataset.voice);
+                // Remove selected class from all options
+                voiceOptions.forEach(opt => opt.classList.remove('selected'));
+                // Add selected class to clicked option
+                this.classList.add('selected');
+                // Update hidden input
+                selectedVoiceInput.value = this.dataset.voice;
+                console.log('Selected voice:', selectedVoiceInput.value);
+            });
+        });
+
+        // Set default voice selection (Polly)
+        document.querySelector('.voice-option[data-voice="polly"]').classList.add('selected');
+
+        // Voice sample playback functionality
+        let currentlyPlaying = null;
+        const playButtons = document.querySelectorAll('.play-sample-btn');
+
+        playButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation(); // Prevent voice option selection when clicking play button
+                
+                const voiceType = this.dataset.voice;
+                const audio = document.getElementById(`${voiceType}-sample`);
+                const playIcon = this.querySelector('.play-icon');
+                const pauseIcon = this.querySelector('.pause-icon');
+                
+                // Stop any currently playing audio
+                if (currentlyPlaying && currentlyPlaying !== audio) {
+                    currentlyPlaying.pause();
+                    currentlyPlaying.currentTime = 0;
+                    const otherButton = currentlyPlaying.parentElement.querySelector('.play-sample-btn');
+                    if (otherButton) {
+                        otherButton.classList.remove('playing');
+                        otherButton.querySelector('.play-icon').style.display = 'inline';
+                        otherButton.querySelector('.pause-icon').style.display = 'none';
+                    }
+                }
+                
+                if (audio.paused) {
+                    // Play audio
+                    audio.play().then(() => {
+                        this.classList.add('playing');
+                        playIcon.style.display = 'none';
+                        pauseIcon.style.display = 'inline';
+                        currentlyPlaying = audio;
+                    }).catch(error => {
+                        console.error('Error playing audio:', error);
+                        // Show fallback message if audio fails to load
+                        this.textContent = 'Sample not available';
+                        this.disabled = true;
+                    });
+                } else {
+                    // Pause audio
+                    audio.pause();
+                    audio.currentTime = 0;
+                    this.classList.remove('playing');
+                    playIcon.style.display = 'inline';
+                    pauseIcon.style.display = 'none';
+                    currentlyPlaying = null;
+                }
+            });
+        });
+
+        // Reset audio when it ends
+        document.querySelectorAll('audio').forEach(audio => {
+            audio.addEventListener('ended', function() {
+                const button = this.parentElement.querySelector('.play-sample-btn');
+                if (button) {
+                    button.classList.remove('playing');
+                    button.querySelector('.play-icon').style.display = 'inline';
+                    button.querySelector('.pause-icon').style.display = 'none';
+                }
+                currentlyPlaying = null;
+            });
+        });
+
+
+
         // Form submission
         const form = document.getElementById('join-form');
         const submitButton = document.getElementById('submit-button');
@@ -944,8 +1528,8 @@
                     body: JSON.stringify({
                         name: document.getElementById('name').value,
                         email: document.getElementById('email').value,
-                        preferred_language: document.getElementById('preferred-language').value,
                         plan: selectedPlanInput.value,
+                        voice: selectedVoiceInput.value,
                         payment_method_id: paymentMethod.id,
                     }),
                 });
@@ -977,11 +1561,7 @@
             const audienceUrl = `${window.location.origin}/audience/${speakerCode}`;
             generateQRCode(audienceUrl);
             
-            // Check if user selected a premium plan and show voice recording section
-            const selectedPlan = document.getElementById('selected-plan').value;
-            if (selectedPlan.includes('monthly-13') || selectedPlan.includes('yearly-150')) {
-                document.getElementById('voice-recording-section').style.display = 'block';
-            }
+
             
             // Show modal
             document.getElementById('success-modal').style.display = 'block';
@@ -1021,12 +1601,16 @@
         window.onclick = function(event) {
             const successModal = document.getElementById('success-modal');
             const voiceModal = document.getElementById('voice-recording-modal');
+            const demoModal = document.getElementById('custom-voice-demo-modal');
             
             if (event.target === successModal) {
                 closeSuccessModal();
             }
             if (event.target === voiceModal) {
                 closeVoiceRecordingModal();
+            }
+            if (event.target === demoModal) {
+                closeCustomVoiceDemoModal();
             }
         }
 
@@ -1035,6 +1619,7 @@
             if (event.key === 'Escape') {
                 closeSuccessModal();
                 closeVoiceRecordingModal();
+                closeCustomVoiceDemoModal();
             }
         });
 
@@ -1066,10 +1651,64 @@
             resetVoiceRecording();
         }
 
+        function showCustomVoiceDemo() {
+            document.getElementById('custom-voice-demo-modal').style.display = 'block';
+            initializeDemoRecording();
+        }
+
+        function closeCustomVoiceDemoModal() {
+            document.getElementById('custom-voice-demo-modal').style.display = 'none';
+            resetDemoRecording();
+        }
+
+        function showCustomVoiceShowcase() {
+            // Show the custom voice showcase section
+            document.getElementById('custom-voice-showcase').style.display = 'block';
+            
+            // Add original recording player
+            const originalPlayer = document.getElementById('original-recording-player');
+            if (voiceAudioBlob) {
+                const url = URL.createObjectURL(voiceAudioBlob);
+                originalPlayer.innerHTML = `<audio controls src="${url}" style="width: 100%;"></audio>`;
+            }
+            
+            // Add cloned voice demo (simulated for now)
+            const clonedPlayer = document.getElementById('cloned-voice-player');
+            clonedPlayer.innerHTML = `
+                <button class="btn btn-success" onclick="playClonedVoiceDemo()">
+                    <span class="play-icon">▶</span>
+                    Hear Your Cloned Voice
+                </button>
+            `;
+        }
+
+        function playClonedVoiceDemo() {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            button.innerHTML = '<span class="play-icon">⏸</span> Playing...';
+            button.disabled = true;
+            
+            // Simulate cloned voice playback
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 3000);
+            
+            // TODO: Replace with actual cloned voice TTS call
+            console.log('Playing cloned voice demo');
+        }
+
         // Voice Recording Variables
         let voiceMediaRecorder, voiceAudioChunks = [], voiceTimerInterval, voiceSeconds = 0;
         const VOICE_MAX_SECONDS = 30;
         let voiceAudioBlob = null;
+
+        // Demo Recording Variables
+        let demoMediaRecorder, demoAudioChunks = [], demoTimerInterval, demoSeconds = 0;
+        const DEMO_MAX_SECONDS = 15;
+        let demoAudioBlob = null;
+        let demoStatus = null; // Global reference to demo status element
 
         function initializeVoiceRecording() {
             const voiceStartBtn = document.getElementById('voice-startBtn');
@@ -1160,10 +1799,13 @@
                         voiceUploadBtn.textContent = 'Voice Created!';
                         voiceUploadBtn.disabled = true;
                         
-                        // Close modal after 3 seconds
+                        // Show custom voice showcase in success modal
+                        showCustomVoiceShowcase();
+                        
+                        // Close voice recording modal after 2 seconds
                         setTimeout(() => {
                             closeVoiceRecordingModal();
-                        }, 3000);
+                        }, 2000);
                     } else {
                         voiceStatus.textContent = 'Error: ' + (data.error || 'Unknown error');
                         voiceStatus.className = 'status error';
@@ -1179,6 +1821,224 @@
                     // Initialize
         resetVoiceRecording();
     }
+
+        function initializeDemoRecording() {
+            const demoStartBtn = document.getElementById('demo-startBtn');
+            const demoTimer = document.getElementById('demo-timer');
+            const demoAudioPreview = document.getElementById('demo-audioPreview');
+            demoStatus = document.getElementById('demo-status'); // Set global reference
+
+            function updateDemoTimer() {
+                demoTimer.textContent = `0${Math.floor(demoSeconds/60)}`.slice(-2) + ':' + `0${demoSeconds%60}`.slice(-2);
+            }
+
+            function resetDemoRecording() {
+                demoSeconds = 0;
+                updateDemoTimer();
+                demoAudioChunks = [];
+                demoAudioBlob = null;
+                demoAudioPreview.innerHTML = '';
+                demoStatus.textContent = '';
+                demoStatus.className = 'demo-status';
+                document.getElementById('demo-results').style.display = 'none';
+            }
+
+            demoStartBtn.onclick = async () => {
+                resetDemoRecording();
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    demoMediaRecorder = new MediaRecorder(stream);
+                    demoMediaRecorder.start();
+                    demoStartBtn.disabled = true;
+                    demoStatus.textContent = 'Recording demo...';
+                    demoStatus.className = 'demo-status info';
+                    
+                    demoTimerInterval = setInterval(() => {
+                        demoSeconds++;
+                        updateDemoTimer();
+                        if (demoSeconds >= DEMO_MAX_SECONDS) {
+                            if (demoMediaRecorder && demoMediaRecorder.state === 'recording') {
+                                demoMediaRecorder.stop();
+                            }
+                        }
+                    }, 1000);
+                    
+                    demoMediaRecorder.ondataavailable = e => demoAudioChunks.push(e.data);
+                    demoMediaRecorder.onstop = () => {
+                        clearInterval(demoTimerInterval);
+                        demoStartBtn.disabled = false;
+                        demoStatus.textContent = 'Demo recording complete! Processing your voice...';
+                        demoStatus.className = 'demo-status info';
+                        demoAudioBlob = new Blob(demoAudioChunks, { type: 'audio/webm' });
+                        const url = URL.createObjectURL(demoAudioBlob);
+                        demoAudioPreview.innerHTML = `<audio controls src="${url}"></audio>`;
+                        
+                        // Automatically process the voice
+                        processDemoVoice();
+                    };
+                } catch (error) {
+                    demoStatus.textContent = 'Error accessing microphone: ' + error.message;
+                    demoStatus.className = 'demo-status error';
+                }
+            };
+
+
+
+            async function processDemoVoice() {
+                if (!demoAudioBlob) return;
+                
+                try {
+                    // Create form data for voice creation
+                    const formData = new FormData();
+                    formData.append('audio', demoAudioBlob, 'demo_voice_sample.webm');
+                    formData.append('voice_name', 'Demo Voice');
+                    formData.append('description', 'Demo voice created during trial');
+                    
+                    // Call the actual ElevenLabs API to create the voice
+                    const res = await fetch('/api/create-elevenlabs-voice', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await res.json();
+                    
+                    if (res.ok) {
+                        // Store the voice ID for demo playback
+                        window.demoVoiceID = data.voice_id;
+                        demoStatus.textContent = 'Voice created successfully!';
+                        demoStatus.className = 'demo-status success';
+                        
+                        // Show demo results with real voice
+                        showDemoResults();
+                    } else {
+                        throw new Error(data.error || 'Failed to create voice');
+                    }
+                } catch (error) {
+                    console.error('Demo voice creation error:', error);
+                    demoStatus.textContent = 'Error: ' + error.message;
+                    demoStatus.className = 'demo-status error';
+                }
+            }
+
+            function showDemoResults() {
+                const resultsDiv = document.getElementById('demo-results');
+                const clonedPlayer = document.getElementById('demo-cloned-player');
+                
+                // Add real cloned voice demo
+                clonedPlayer.innerHTML = `
+                    <button class="btn btn-success" onclick="playDemoClonedVoice()">
+                        <span class="play-icon">▶</span>
+                        Hear Your Cloned Voice
+                    </button>
+                `;
+                
+                resultsDiv.style.display = 'block';
+                demoStatus.textContent = 'Demo processed successfully! Your voice has been cloned!';
+                demoStatus.className = 'demo-status success';
+            }
+
+            // Initialize
+            resetDemoRecording();
+        }
+
+        async function playDemoClonedVoice() {
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            if (!window.demoVoiceID) {
+                console.error('No demo voice ID available');
+                return;
+            }
+            
+            button.innerHTML = '<span class="play-icon">⏸</span> Playing...';
+            button.disabled = true;
+            
+            try {
+                // Call the demo TTS API with the cloned voice
+                const response = await fetch('/demo-tts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        text: "Welcome to our translation service. This is how your voice would sound in any language. Enhance your audience's experience by allowing them to hear your voice in their own language!",
+                        language: "en",
+                        voiceId: window.demoVoiceID
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to generate speech');
+                }
+
+                // Create audio element and play the response
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+                
+                audio.onended = () => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                };
+                
+                audio.onerror = () => {
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    console.error('Audio playback error');
+                };
+                
+                await audio.play();
+                
+            } catch (error) {
+                console.error('Error playing cloned voice:', error);
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }
+        }
+
+        function resetDemoRecording() {
+            demoSeconds = 0;
+            demoAudioChunks = [];
+            demoAudioBlob = null;
+        }
+
+        function keepDemoVoice() {
+            // Store the demo voice ID for use in registration
+            window.keepDemoVoiceID = window.demoVoiceID;
+            if (demoStatus) {
+                demoStatus.textContent = 'Voice saved! This will be used for your account.';
+                demoStatus.className = 'demo-status success';
+            }
+            
+            // Close the demo modal
+            setTimeout(() => {
+                closeCustomVoiceDemoModal();
+            }, 2000);
+        }
+
+        function retryDemoVoice() {
+            // Reset and start over
+            resetDemoRecording();
+            document.getElementById('demo-results').style.display = 'none';
+            if (demoStatus) {
+                demoStatus.textContent = 'Ready to record again. Click Start Recording when ready.';
+                demoStatus.className = 'demo-status info';
+            }
+        }
+
+        function passDemoVoice() {
+            // User chooses not to use the demo voice
+            window.keepDemoVoiceID = null;
+            if (demoStatus) {
+                demoStatus.textContent = 'No problem! You can always create a custom voice later.';
+                demoStatus.className = 'demo-status info';
+            }
+            
+            // Close the demo modal
+            setTimeout(() => {
+                closeCustomVoiceDemoModal();
+            }, 2000);
+        }
 
         // Session management
         const loginBtn = document.getElementById("login-btn");
