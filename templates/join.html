@@ -147,6 +147,7 @@
         .plan-description {
             color: #666;
             font-size: 0.9rem;
+            line-height: 1.4;
         }
 
         /* Voice Recording Modal Styles */
@@ -559,6 +560,11 @@
 
         .plan-description::before {
             content: "";
+            display: block;
+            margin-top: 0.5rem;
+        }
+
+        .plan-description strong {
             display: block;
             margin-top: 0.5rem;
         }
@@ -981,6 +987,63 @@
         .speaker-code-display small {
             color: #666 !important;
         }
+
+        /* Cost Calculator Styles */
+        .cost-calculator {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+        }
+
+        .cost-calculator h5 {
+            margin-bottom: 1rem;
+            color: #333;
+            font-size: 1.1rem;
+        }
+
+        .cost-breakdown {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .cost-item {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .cost-item:last-of-type {
+            border-bottom: none;
+        }
+
+        .cost-total {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 0.75rem 0;
+            border-top: 2px solid #007bff;
+            margin-top: 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        .cost-item span:first-child {
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+
+        .cost-item span:last-child {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .cost-total strong {
+            color: #007bff;
+        }
     </style>
 </head>
 <body>
@@ -1040,44 +1103,54 @@
                     <h3>Choose Your Plan *</h3>
                     <p style="color: #666; margin-bottom: 1rem;">Click on a plan below to select it:</p>
                     <div class="plan-options">
-                        <div class="plan-option" data-plan="monthly-5">
+                        <div class="plan-option" data-plan="monthly-5" data-hours="8" data-period="month">
                             <div class="plan-name">Starter Monthly</div>
                             <div class="plan-price">8 Hours/month</div>
                             <div class="plan-description">
                                 <br>
                                 $50/hour rate<br>
+                                <br>
+                                <strong>Total: $400/month</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="monthly-13">
-                            <div class="plan-name">Premium Monthly</div>
+                        <div class="plan-option" data-plan="monthly-13" data-hours="50" data-period="year">
+                            <div class="plan-name">Starter Yearly</div>
                             <div class="plan-price">50 Hours/year</div>
                             <div class="plan-description">
                                <br>
                                 $50/hour rate<br>
+                                <br>
+                                <strong>Total: $2,500/year</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="yearly-50">
-                            <div class="plan-name">Starter Yearly</div>
+                        <div class="plan-option" data-plan="yearly-50" data-hours="100" data-period="year">
+                            <div class="plan-name">Professional Yearly</div>
                             <div class="plan-price">100 Hours/year</div>
                             <div class="plan-description">
                                 <br>
                                 $50/hour rate<br>
+                                <br>
+                                <strong>Total: $5,000/year</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="yearly-100">
-                            <div class="plan-name">Professional Yearly</div>
+                        <div class="plan-option" data-plan="yearly-100" data-hours="150" data-period="year">
+                            <div class="plan-name">Premium Yearly</div>
                             <div class="plan-price">150 Hours/year</div>
                             <div class="plan-description">
                                 <br>
                                 $50/hour rate<br>
+                                <br>
+                                <strong>Total: $7,500/year</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="yearly-150">
+                        <div class="plan-option" data-plan="yearly-150" data-hours="8" data-period="year">
                             <div class="plan-name">Just in Case</div>
                             <div class="plan-price">8 Hours/year </div>
                             <div class="plan-description">
                                 <br>
                                 $50/hour rate<br>
+                                <br>
+                                <strong>Total: $400/year</strong>
                             </div>
                         </div>
                     </div>
@@ -1145,6 +1218,25 @@
                             </div>
                         </div>
                         <input type="hidden" id="selected-voice" name="voice" value="polly">
+                    
+                    <!-- Cost Calculator -->
+                    <div class="cost-calculator" style="margin-top: 1.5rem; padding: 1rem; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;">
+                        <h5 style="margin-bottom: 1rem; color: #333;">Cost Breakdown</h5>
+                        <div class="cost-breakdown">
+                            <div class="cost-item">
+                                <span>Base Plan:</span>
+                                <span id="base-cost">$0</span>
+                            </div>
+                            <div class="cost-item" id="voice-cost-item" style="display: none;">
+                                <span>Voice Upgrade:</span>
+                                <span id="voice-cost">$0</span>
+                            </div>
+                            <div class="cost-total">
+                                <strong>Total per period:</strong>
+                                <strong id="total-cost">$0</strong>
+                            </div>
+                        </div>
+                    </div>
                     </div>
 
 
@@ -1388,6 +1480,8 @@
                 // Update hidden input
                 selectedPlanInput.value = this.dataset.plan;
                 console.log('Selected plan:', selectedPlanInput.value);
+                // Update cost calculation
+                updateCostCalculation();
             });
         });
 
@@ -1407,11 +1501,67 @@
                 // Update hidden input
                 selectedVoiceInput.value = this.dataset.voice;
                 console.log('Selected voice:', selectedVoiceInput.value);
+                // Update cost calculation
+                updateCostCalculation();
             });
         });
 
         // Set default voice selection (Polly)
         document.querySelector('.voice-option[data-voice="polly"]').classList.add('selected');
+
+        // Cost calculation function
+        function updateCostCalculation() {
+            const selectedPlan = document.querySelector('.plan-option.selected');
+            const selectedVoice = document.querySelector('.voice-option.selected');
+            
+            if (!selectedPlan) {
+                // No plan selected, hide calculator
+                document.querySelector('.cost-calculator').style.display = 'none';
+                return;
+            }
+            
+            // Show calculator
+            document.querySelector('.cost-calculator').style.display = 'block';
+            
+            // Get plan details
+            const hours = parseInt(selectedPlan.dataset.hours);
+            const period = selectedPlan.dataset.period;
+            const baseRate = 50; // $50 per hour
+            const baseCost = hours * baseRate;
+            
+            // Get voice upgrade cost
+            let voiceUpgradeCost = 0;
+            let voiceCostText = '';
+            
+            if (selectedVoice && selectedVoice.dataset.voice === 'elevenlabs') {
+                voiceUpgradeCost = hours * 15; // +$15/hour for premium voice
+                voiceCostText = `+$${voiceUpgradeCost.toLocaleString()}/${period}`;
+            } else if (selectedVoice && selectedVoice.dataset.voice === 'custom') {
+                voiceUpgradeCost = hours * 20; // +$20/hour for custom voice
+                voiceCostText = `+$${voiceUpgradeCost.toLocaleString()}/${period}`;
+            }
+            
+            // Calculate total
+            const totalCost = baseCost + voiceUpgradeCost;
+            
+            // Update display
+            document.getElementById('base-cost').textContent = `$${baseCost.toLocaleString()}/${period}`;
+            
+            const voiceCostItem = document.getElementById('voice-cost-item');
+            const voiceCostSpan = document.getElementById('voice-cost');
+            
+            if (voiceUpgradeCost > 0) {
+                voiceCostItem.style.display = 'flex';
+                voiceCostSpan.textContent = voiceCostText;
+            } else {
+                voiceCostItem.style.display = 'none';
+            }
+            
+            document.getElementById('total-cost').textContent = `$${totalCost.toLocaleString()}/${period}`;
+        }
+
+        // Initialize cost calculation
+        updateCostCalculation();
 
         // Voice sample playback functionality
         let currentlyPlaying = null;
