@@ -1103,7 +1103,7 @@
                     <h3>Choose Your Plan *</h3>
                     <p style="color: #666; margin-bottom: 1rem;">Click on a plan below to select it:</p>
                     <div class="plan-options">
-                        <div class="plan-option" data-plan="monthly-5" data-hours="8" data-period="month">
+                        <div class="plan-option" data-plan="monthly-8" data-hours="8" data-period="month">
                             <div class="plan-name">Starter Monthly</div>
                             <div class="plan-price">8 Hours/month</div>
                             <div class="plan-description">
@@ -1113,7 +1113,7 @@
                                 <strong>Total: $400/month</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="monthly-13" data-hours="50" data-period="year">
+                        <div class="plan-option" data-plan="yearly-50" data-hours="50" data-period="year">
                             <div class="plan-name">Starter Yearly</div>
                             <div class="plan-price">50 Hours/year</div>
                             <div class="plan-description">
@@ -1123,7 +1123,7 @@
                                 <strong>Total: $2,500/year</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="yearly-50" data-hours="100" data-period="year">
+                        <div class="plan-option" data-plan="yearly-100" data-hours="100" data-period="year">
                             <div class="plan-name">Professional Yearly</div>
                             <div class="plan-price">100 Hours/year</div>
                             <div class="plan-description">
@@ -1133,7 +1133,7 @@
                                 <strong>Total: $4,000/year</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="yearly-100" data-hours="150" data-period="year">
+                        <div class="plan-option" data-plan="yearly-150" data-hours="150" data-period="year">
                             <div class="plan-name">Enterprise Yearly</div>
                             <div class="plan-price">150 Hours/year</div>
                             <div class="plan-description">
@@ -1143,7 +1143,7 @@
                                 <strong>Total: $4,500/year</strong>
                             </div>
                         </div>
-                        <div class="plan-option" data-plan="yearly-150" data-hours="8" data-period="year">
+                        <div class="plan-option" data-plan="yearly-8" data-hours="8" data-period="year">
                             <div class="plan-name">Just in Case</div>
                             <div class="plan-price">8 Hours/year </div>
                             <div class="plan-description">
@@ -1524,9 +1524,15 @@
             document.querySelector('.cost-calculator').style.display = 'block';
             
             // Get plan details
-            const hours = parseInt(selectedPlan.dataset.hours);
+            let hours = parseInt(selectedPlan.dataset.hours);
             const period = selectedPlan.dataset.period;
-            const baseRate = 50; // $50 per hour
+            let baseRate = 50; // $50 per hour
+            let planKey = selectedPlan.dataset.plan;
+            if(planKey=="yearly-150"){
+                baseRate = 30;
+            }else if(planKey=="yearly-100"){
+                baseRate = 40;
+            }
             const baseCost = hours * baseRate;
             
             // Get voice upgrade cost
