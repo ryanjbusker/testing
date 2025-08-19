@@ -188,7 +188,11 @@
                                     <h4>Subscription</h4>
                                     <p><strong>Plan:</strong> <span id="subscription-plan">Loading...</span></p>
                                     <p><strong>Details:</strong> <span id="plan-details">Loading...</span></p>
+                                    <p><strong>Amount Due:</strong> <span id="amount-due">Loading...</span></p>
+                                    <p><strong>Billing Cycle:</strong> <span id="billing-cycle">Loading...</span></p>
                                     <p><strong>Next Billing Date:</strong> <span id="next-billing">Loading...</span></p>
+                                    <p><strong>Voice Preference:</strong> <span id="voice-preference">Loading...</span></p>
+                                    <p><strong>Payment Status:</strong> <span id="payment-status">Loading...</span></p>
                                 </div>
                                 <div class="info-group mb-3">
                                     <h4>Speaker Code</h4>
@@ -246,7 +250,11 @@
                         document.getElementById('last-login').textContent = data.last_login || 'N/A';
                         document.getElementById('subscription-plan').textContent = data.subscription_plan || 'Free';
                         document.getElementById('plan-details').textContent = data.plan_details || 'N/A';
+                        document.getElementById('amount-due').textContent = data.amount_due || 'N/A';
+                        document.getElementById('billing-cycle').textContent = data.billing_cycle || 'N/A';
                         document.getElementById('next-billing').textContent = data.next_billing || 'N/A';
+                        document.getElementById('voice-preference').textContent = data.voice_preference || 'Standard (Polly)';
+                        document.getElementById('payment-status').textContent = data.payment_status || 'N/A';
                         
                         // Update modal based on whether user has a custom voice
                         const voiceDeletionItem = document.getElementById('voice-deletion-item');
@@ -263,7 +271,11 @@
                         document.getElementById('last-login').textContent = 'Error loading';
                         document.getElementById('subscription-plan').textContent = 'Error loading';
                         document.getElementById('plan-details').textContent = 'Error loading';
+                        document.getElementById('amount-due').textContent = 'Error loading';
+                        document.getElementById('billing-cycle').textContent = 'Error loading';
                         document.getElementById('next-billing').textContent = 'Error loading';
+                        document.getElementById('voice-preference').textContent = 'Error loading';
+                        document.getElementById('payment-status').textContent = 'Error loading';
                     });
 
                     // Fetch usage statistics

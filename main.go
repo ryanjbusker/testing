@@ -932,19 +932,24 @@ func main() {
 		}
 
 		var accountDetails struct {
-			PaymentStatus    string    `json:"payment_status"`
-			SubscriptionID   string    `json:"subscription_id"`
-			StripeCustomerID string    `json:"stripe_customer_id"`
-			PlanName         string    `json:"plan_name"`
-			VoiceID          string    `json:"voice_id"`
-			CreatedAt        time.Time `json:"created_at"`
+			PaymentStatus    string         `json:"payment_status"`
+			SubscriptionID   string         `json:"subscription_id"`
+			StripeCustomerID string         `json:"stripe_customer_id"`
+			PlanName         string         `json:"plan_name"`
+			VoiceID          sql.NullString `json:"voice_id"`
+			VoicePreference  string         `json:"voice_preference"`
+			CreatedAt        time.Time      `json:"created_at"`
 		}
 
 		err := db.QueryRow(`
-			SELECT payment_status, subscription_id, stripe_customer_id, plan_name, voice_id, created_at
+			SELECT payment_status, subscription_id, stripe_customer_id, plan_name, voice_id, voice_preference, created_at
 			FROM speakers 
 			WHERE google_id = $1
-		`, googleSub).Scan(&accountDetails.PaymentStatus, &accountDetails.SubscriptionID, &accountDetails.StripeCustomerID, &accountDetails.PlanName, &accountDetails.VoiceID, &accountDetails.CreatedAt)
+		`, googleSub).Scan(&accountDetails.PaymentStatus, &accountDetails.SubscriptionID, &accountDetails.StripeCustomerID, &accountDetails.PlanName, &accountDetails.VoiceID, &accountDetails.VoicePreference, &accountDetails.CreatedAt)
+
+		// Debug logging
+		log.Printf("Account details for user %s: payment_status=%s, plan_name=%s, voice_preference=%s",
+			googleSub, accountDetails.PaymentStatus, accountDetails.PlanName, accountDetails.VoicePreference)
 
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -960,44 +965,73 @@ func main() {
 		var subscriptionPlan string
 		var nextBilling string
 		var planDetails string
+		var amountDue string
+		var billingCycle string
+
+		// Debug logging for condition check
+		log.Printf("Condition check: payment_status='%s', plan_name='%s', condition result=%v",
+			accountDetails.PaymentStatus, accountDetails.PlanName,
+			accountDetails.PaymentStatus == "active" && accountDetails.PlanName != "")
 
 		if accountDetails.PaymentStatus == "active" && accountDetails.PlanName != "" {
 			// Use the stored plan name to determine the display name and details
 			switch accountDetails.PlanName {
-			case "monthly-5":
-				subscriptionPlan = "Starter Monthly - Hours"
-				planDetails = "5 hours/month - $350/month"
 			case "monthly-8":
-				subscriptionPlan = "Professional Monthly - 8 Hours"
-				planDetails = "8 hours/month - $480/month"
-			case "monthly-13":
-				subscriptionPlan = "Premium Monthly"
-				planDetails = "13 hours/month - $650/month"
+				subscriptionPlan = "Starter Monthly"
+				planDetails = "8 hours/month"
+				amountDue = "$400"
+				billingCycle = "Monthly"
+			case "yearly-8":
+				subscriptionPlan = "Just in Case"
+				planDetails = "8 hours/year"
+				amountDue = "$400"
+				billingCycle = "Yearly"
 			case "yearly-50":
 				subscriptionPlan = "Starter Yearly"
-				planDetails = "50 hours/year - $2,500/year"
+				planDetails = "50 hours/year"
+				amountDue = "$2,500"
+				billingCycle = "Yearly"
 			case "yearly-100":
 				subscriptionPlan = "Professional Yearly"
-				planDetails = "100 hours/year - $4,000/year"
+				planDetails = "100 hours/year"
+				amountDue = "$4,000"
+				billingCycle = "Yearly"
 			case "yearly-150":
-				subscriptionPlan = "Premium Yearly"
-				planDetails = "150 hours/year - $4,500/year"
+				subscriptionPlan = "Enterprise Yearly"
+				planDetails = "150 hours/year"
+				amountDue = "$4,500"
+				billingCycle = "Yearly"
 			default:
 				subscriptionPlan = "Active Subscription"
 				planDetails = "Custom Plan"
+				amountDue = "Contact Support"
+				billingCycle = "Custom"
 			}
 
-			// Fetch next billing date from Stripe if subscription ID exists
+			// Fetch next billing date and amount from Stripe if subscription ID exists
 			if accountDetails.SubscriptionID != "" {
+				log.Printf("Attempting to fetch Stripe subscription: %s", accountDetails.SubscriptionID)
 				stripe.Key = os.Getenv("STRIPE_SECRET_KEY")
 				sub, err := subscription.Get(accountDetails.SubscriptionID, nil)
 				if err != nil {
 					log.Printf("Error fetching Stripe subscription: %v", err)
 					nextBilling = "Unable to fetch billing date"
 				} else {
+					log.Printf("Successfully fetched Stripe subscription, current period end: %d", sub.CurrentPeriodEnd)
 					// Convert Unix timestamp to readable date
 					nextBillingTime := time.Unix(sub.CurrentPeriodEnd, 0)
 					nextBilling = nextBillingTime.Format("January 2, 2006")
+
+					// Get the actual amount due from Stripe
+					if sub.Items != nil && len(sub.Items.Data) > 0 {
+						totalAmount := int64(0)
+						for _, item := range sub.Items.Data {
+							if item.Price != nil {
+								totalAmount += item.Price.UnitAmount
+							}
+						}
+						amountDue = fmt.Sprintf("$%.2f", float64(totalAmount)/100)
+					}
 				}
 			} else {
 				nextBilling = "Next billing cycle"
@@ -1006,10 +1040,20 @@ func main() {
 			subscriptionPlan = "Free Plan"
 			planDetails = "Limited access"
 			nextBilling = "N/A"
+			amountDue = "$0"
+			billingCycle = "N/A"
 		} else {
 			subscriptionPlan = "Inactive"
 			planDetails = "No active subscription"
 			nextBilling = "N/A"
+			amountDue = "$0"
+			billingCycle = "N/A"
+		}
+
+		// Handle nullable voice_id
+		var voiceID string
+		if accountDetails.VoiceID.Valid {
+			voiceID = accountDetails.VoiceID.String
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -1020,7 +1064,10 @@ func main() {
 			"subscription_plan":  subscriptionPlan,
 			"plan_details":       planDetails,
 			"next_billing":       nextBilling,
-			"voice_id":           accountDetails.VoiceID,
+			"amount_due":         amountDue,
+			"billing_cycle":      billingCycle,
+			"voice_preference":   accountDetails.VoicePreference,
+			"voice_id":           voiceID,
 			"last_login":         time.Now().Format("2006-01-02 15:04:05"), // You can enhance this with actual last login tracking
 		})
 	})
