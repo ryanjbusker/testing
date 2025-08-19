@@ -334,6 +334,18 @@ func init() {
 	log.Printf("Stripe Yearly 50h Price ID configured: %v", os.Getenv("STRIPE_YEARLY_50_PRICE_ID") != "")
 	log.Printf("Stripe Yearly 100h Price ID configured: %v", os.Getenv("STRIPE_YEARLY_100_PRICE_ID") != "")
 	log.Printf("Stripe Yearly 150h Price ID configured: %v", os.Getenv("STRIPE_YEARLY_150_PRICE_ID") != "")
+	// Log voice add-on price ID configuration
+	log.Printf("Stripe Voice ElevenLabs 8H Price ID configured: %v", os.Getenv("STRIPE_VOICE_ELEVENLABS_8H_PRICE_ID") != "")
+	log.Printf("Stripe Voice ElevenLabs 8H Yearly Price ID configured: %v", os.Getenv("STRIPE_VOICE_ELEVENLABS_8H_YEARLY_PRICE_ID") != "")
+	log.Printf("Stripe Voice ElevenLabs 50H Price ID configured: %v", os.Getenv("STRIPE_VOICE_ELEVENLABS_50H_PRICE_ID") != "")
+	log.Printf("Stripe Voice ElevenLabs 100H Price ID configured: %v", os.Getenv("STRIPE_VOICE_ELEVENLABS_100H_PRICE_ID") != "")
+	log.Printf("Stripe Voice ElevenLabs 150H Price ID configured: %v", os.Getenv("STRIPE_VOICE_ELEVENLABS_150H_PRICE_ID") != "")
+
+	log.Printf("Stripe Voice Custom 8H Price ID configured: %v", os.Getenv("STRIPE_VOICE_CUSTOM_8H_PRICE_ID") != "")
+	log.Printf("Stripe Voice Custom 8H Yearly Price ID configured: %v", os.Getenv("STRIPE_VOICE_CUSTOM_8H_YEARLY_PRICE_ID") != "")
+	log.Printf("Stripe Voice Custom 50H Price ID configured: %v", os.Getenv("STRIPE_VOICE_CUSTOM_50H_PRICE_ID") != "")
+	log.Printf("Stripe Voice Custom 100H Price ID configured: %v", os.Getenv("STRIPE_VOICE_CUSTOM_100H_PRICE_ID") != "")
+	log.Printf("Stripe Voice Custom 150H Price ID configured: %v", os.Getenv("STRIPE_VOICE_CUSTOM_150H_PRICE_ID") != "")
 
 	key := os.Getenv("SESSION_KEY")
 	if key == "" {
@@ -677,7 +689,8 @@ func main() {
         payment_status TEXT,
         subscription_id TEXT,
         stripe_customer_id TEXT,
-        plan_name TEXT
+        plan_name TEXT,
+        voice_preference TEXT DEFAULT 'polly'
     );
     `
 	_, err = db.Exec(createTableSQL)
@@ -1452,8 +1465,8 @@ func main() {
 			return
 		}
 
-		// Create subscription based on selected plan
-		subscriptionErr := createSubscriptionForPlan(db, speaker, joinRequest.Plan, joinRequest.PaymentMethodID)
+		// Create subscription based on selected plan and voice preference
+		subscriptionErr := createSubscriptionWithVoiceAddon(db, speaker, joinRequest.Plan, joinRequest.Voice, joinRequest.PaymentMethodID)
 		if subscriptionErr != nil {
 			log.Printf("Error creating subscription: %v", subscriptionErr)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create subscription"})
@@ -2253,17 +2266,15 @@ func generateUniqueSpeakerCode(db *sql.DB) (string, error) {
 	return "", fmt.Errorf("failed to generate unique speaker code after %d attempts", maxAttempts)
 }
 
-// createSubscriptionForPlan creates a subscription based on the selected plan
-func createSubscriptionForPlan(db *sql.DB, speaker *Speaker, plan, paymentMethodID string) error {
+// createSubscriptionWithVoiceAddon creates a subscription with both main plan and voice add-on
+func createSubscriptionWithVoiceAddon(db *sql.DB, speaker *Speaker, plan, voice, paymentMethodID string) error {
 	// Get the appropriate price ID based on the plan
 	var priceID string
 	switch plan {
-	case "monthly-5":
-		priceID = os.Getenv("STRIPE_MONTHLY_5_PRICE_ID")
 	case "monthly-8":
 		priceID = os.Getenv("STRIPE_MONTHLY_8_PRICE_ID")
-	case "monthly-13":
-		priceID = os.Getenv("STRIPE_MONTHLY_13_PRICE_ID")
+	case "yearly-8":
+		priceID = os.Getenv("STRIPE_YEARLY_8_PRICE_ID")
 	case "yearly-50":
 		priceID = os.Getenv("STRIPE_YEARLY_50_PRICE_ID")
 	case "yearly-100":
@@ -2288,14 +2299,57 @@ func createSubscriptionForPlan(db *sql.DB, speaker *Speaker, plan, paymentMethod
 		return nil // Don't fail the registration, just skip subscription
 	}
 
-	// Create the subscription using Stripe
-	params := &stripe.SubscriptionParams{
-		Customer: stripe.String(speaker.StripeCustomerID),
-		Items: []*stripe.SubscriptionItemsParams{
-			{
-				Price: stripe.String(priceID),
-			},
+	// Build subscription items - start with main plan
+	subscriptionItems := []*stripe.SubscriptionItemsParams{
+		{
+			Price: stripe.String(priceID),
 		},
+	}
+
+	// Add voice add-on if selected
+	var voicePriceID string
+	switch voice {
+	case "elevenlabs":
+		// Select the appropriate premium voice add-on based on plan hours
+		switch plan {
+		case "monthly-8":
+			voicePriceID = os.Getenv("STRIPE_VOICE_ELEVENLABS_8H_PRICE_ID")
+		case "yearly-8":
+			voicePriceID = os.Getenv("STRIPE_VOICE_ELEVENLABS_8H_YEARLY_PRICE_ID")
+		case "yearly-50":
+			voicePriceID = os.Getenv("STRIPE_VOICE_ELEVENLABS_50H_PRICE_ID")
+		case "yearly-100":
+			voicePriceID = os.Getenv("STRIPE_VOICE_ELEVENLABS_100H_PRICE_ID")
+		case "yearly-150":
+			voicePriceID = os.Getenv("STRIPE_VOICE_ELEVENLABS_150H_PRICE_ID")
+		}
+	case "custom":
+		// Select the appropriate custom voice add-on based on plan hours
+		switch plan {
+		case "monthly-8":
+			voicePriceID = os.Getenv("STRIPE_VOICE_CUSTOM_8H_PRICE_ID")
+		case "yearly-8":
+			voicePriceID = os.Getenv("STRIPE_VOICE_CUSTOM_8H_YEARLY_PRICE_ID")
+		case "yearly-50":
+			voicePriceID = os.Getenv("STRIPE_VOICE_CUSTOM_50H_PRICE_ID")
+		case "yearly-100":
+			voicePriceID = os.Getenv("STRIPE_VOICE_CUSTOM_100H_PRICE_ID")
+		case "yearly-150":
+			voicePriceID = os.Getenv("STRIPE_VOICE_CUSTOM_150H_PRICE_ID")
+		}
+	}
+
+	if voicePriceID != "" && voice != "polly" {
+		subscriptionItems = append(subscriptionItems, &stripe.SubscriptionItemsParams{
+			Price: stripe.String(voicePriceID),
+		})
+		log.Printf("Adding voice add-on: %s with price ID: %s", voice, voicePriceID)
+	}
+
+	// Create the subscription using Stripe with multiple items
+	params := &stripe.SubscriptionParams{
+		Customer:        stripe.String(speaker.StripeCustomerID),
+		Items:           subscriptionItems,
 		PaymentBehavior: stripe.String("default_incomplete"),
 		PaymentSettings: &stripe.SubscriptionPaymentSettingsParams{
 			PaymentMethodTypes: []*string{
@@ -2312,12 +2366,12 @@ func createSubscriptionForPlan(db *sql.DB, speaker *Speaker, plan, paymentMethod
 		return fmt.Errorf("error creating subscription: %v", err)
 	}
 
-	// Update speaker with subscription ID and plan name
+	// Update speaker with subscription ID, plan name, and voice preference
 	_, err = db.Exec(`
 		UPDATE speakers 
-		SET subscription_id = $1, payment_status = 'active', plan_name = $2
-		WHERE id = $3
-	`, subscription.ID, plan, speaker.ID)
+		SET subscription_id = $1, payment_status = 'active', plan_name = $2, voice_preference = $3
+		WHERE id = $4
+	`, subscription.ID, plan, voice, speaker.ID)
 	if err != nil {
 		return fmt.Errorf("error updating speaker with subscription ID: %v", err)
 	}

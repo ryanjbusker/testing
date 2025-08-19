@@ -22,22 +22,40 @@ STRIPE_PUBLISHABLE_KEY=pk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 
 # Stripe Price IDs for different plans
-STRIPE_BASIC_PRICE_ID=price_...
-STRIPE_PRO_PRICE_ID=price_...
-STRIPE_ENTERPRISE_PRICE_ID=price_...
+STRIPE_MONTHLY_5_PRICE_ID=price_...
+STRIPE_MONTHLY_8_PRICE_ID=price_...
+STRIPE_MONTHLY_13_PRICE_ID=price_...
+STRIPE_YEARLY_50_PRICE_ID=price_...
+STRIPE_YEARLY_100_PRICE_ID=price_...
+STRIPE_YEARLY_150_PRICE_ID=price_...
+
+# Voice Add-On Price IDs
+STRIPE_VOICE_ELEVENLABS_PRICE_ID=price_...
+STRIPE_VOICE_CUSTOM_PRICE_ID=price_...
 ```
 
 ## Stripe Setup
 
-1. **Create Products and Prices in Stripe Dashboard:**
+1. **Create Main Plan Products and Prices in Stripe Dashboard:**
    - Go to your Stripe Dashboard
    - Navigate to Products
-   - Create three products:
-     - Basic Plan ($9.99/month)
-     - Pro Plan ($19.99/month)
-     - Enterprise Plan ($49.99/month)
+   - Create the main plan products:
+     - Monthly 5 Hours Plan
+     - Monthly 8 Hours Plan  
+     - Monthly 13 Hours Plan
+     - Yearly 50 Hours Plan
+     - Yearly 100 Hours Plan
+     - Yearly 150 Hours Plan
    - For each product, create a recurring price
    - Copy the price IDs to your environment variables
+
+2. **Create Voice Add-On Products:**
+   - Create two additional products for voice upgrades:
+     - Premium Voice (ElevenLabs) - $15/hour usage-based
+     - Custom Voice (ElevenLabs + Voice Cloning) - $20/hour usage-based
+   - Set up usage-based pricing for both voice products
+   - Copy the voice price IDs to your environment variables
+   - See `VOICE_ADDONS_SETUP.md` for detailed voice add-on setup instructions
 
 2. **Configure Webhooks:**
    - In Stripe Dashboard, go to Webhooks
@@ -64,7 +82,9 @@ CREATE TABLE IF NOT EXISTS speakers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     payment_status TEXT,
     subscription_id TEXT,
-    stripe_customer_id TEXT
+    stripe_customer_id TEXT,
+    plan_name TEXT,
+    voice_preference TEXT DEFAULT 'polly'
 );
 
 -- User info table (should already exist)
@@ -90,9 +110,19 @@ CREATE TABLE IF NOT EXISTS user_info (
 
 ## Payment Plans
 
-- **Basic Plan ($9.99/month):** Up to 10 hours per month, basic support
-- **Pro Plan ($19.99/month):** Up to 50 hours per month, priority support
-- **Enterprise Plan ($49.99/month):** Unlimited hours, 24/7 support
+### Main Plans
+- **Starter Monthly (8h):** $400/month - $50/hour rate
+- **Starter Yearly (50h):** $2,500/year - $50/hour rate  
+- **Professional Yearly (100h):** $4,000/year - $40/hour rate
+- **Enterprise Yearly (150h):** $4,500/year - $30/hour rate
+- **Just in Case (8h/year):** $400/year - $50/hour rate
+
+### Voice Add-Ons
+- **Standard Voice (Polly):** Included with all plans
+- **Premium Voice (ElevenLabs):** +$15/hour add-on
+- **Custom Voice (ElevenLabs + Voice Cloning):** +$20/hour add-on
+
+See `VOICE_ADDONS_SETUP.md` for detailed pricing examples and setup instructions.
 
 ## Security Notes
 
