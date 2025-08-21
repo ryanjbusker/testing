@@ -2083,23 +2083,21 @@ func extractGoogleUserInfo(resp *http.Response) (*GoogleUserInfo, error) {
 
 // isPremiumSubscription checks if the user has a premium subscription
 func isPremiumSubscription(planName string) bool {
-	// Define premium plans - these are the higher-tier plans
+	// Define premium plans - these get access to custom voices
 	premiumPlans := map[string]bool{
-		"monthly-13": true, // Premium Monthly
-		"yearly-150": true, // Premium Yearly
+		"yearly-150": true, // Enterprise Yearly (Premium)
 	}
 
 	return premiumPlans[planName]
 }
 
-// isProfessionalSubscription checks if the user has a professional or premium subscription
+// isProfessionalSubscription checks if the user has a professional subscription
 func isProfessionalSubscription(planName string) bool {
-	// Define professional and premium plans
+	// Define professional plans - these get access to male/female ElevenLabs voices
 	professionalPlans := map[string]bool{
-		"monthly-8":  true, // Professional Monthly
-		"monthly-13": true, // Premium Monthly
+		"monthly-8":  true, // Starter Monthly (Professional voice access)
 		"yearly-100": true, // Professional Yearly
-		"yearly-150": true, // Premium Yearly
+		"yearly-150": true, // Enterprise Yearly (also premium)
 	}
 
 	return professionalPlans[planName]
@@ -2162,17 +2160,21 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 
 		// Get user's subscription information
 		var planName string
-		var userVoiceID string
+		var userVoiceID sql.NullString
+		var voicePreference string
 		session, _ := store.Get(c.Request, "session-name")
 		googleSub, ok := session.Values["google_sub"].(string)
 
 		if ok {
-			// Get user's plan and voice_id from database
-			err := db.QueryRow("SELECT plan_name, voice_id FROM speakers WHERE google_id = $1", googleSub).Scan(&planName, &userVoiceID)
+			// Get user's plan, voice_id, and voice_preference from database
+			err := db.QueryRow("SELECT plan_name, voice_id, voice_preference FROM speakers WHERE google_id = $1", googleSub).Scan(&planName, &userVoiceID, &voicePreference)
 			if err != nil {
 				log.Printf("Error getting user subscription info: %v", err)
 				// Continue with default behavior
+				voicePreference = "polly" // Default fallback
 			}
+		} else {
+			voicePreference = "polly" // Default fallback
 		}
 
 		// Determine which TTS service to use based on subscription
@@ -2180,39 +2182,39 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 		var err error
 		var serviceUsed string
 
-		// Determine voice ID based on subscription and voice type
+		// Determine voice service based on user's voice preference
 		var selectedVoiceID string
 
-		if isPremiumSubscription(planName) || isProfessionalSubscription(planName) {
-			// Premium and Professional users use ElevenLabs
-			availableVoices := getAvailableVoices(planName, userVoiceID)
-
-			if isPremiumSubscription(planName) && req.VoiceType == "custom" && userVoiceID != "" {
-				// Premium users can use their custom voice
-				selectedVoiceID = userVoiceID
+		switch voicePreference {
+		case "custom":
+			// Custom voice users get their custom ElevenLabs voice
+			if userVoiceID.Valid && userVoiceID.String != "" {
+				selectedVoiceID = userVoiceID.String
 				audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
 				serviceUsed = "ElevenLabs (Custom Voice)"
 			} else {
-				// Use male or female ElevenLabs voices
-				if req.VoiceType == "male" && isProfessionalSubscription(planName) {
-					if maleVoices, ok := availableVoices["male"].(map[string]string); ok {
-						selectedVoiceID = maleVoices["default"]
-					}
-				} else {
-					// Default to female voice
-					if femaleVoices, ok := availableVoices["female"].(map[string]string); ok {
-						selectedVoiceID = femaleVoices["default"]
-					}
-				}
-
+				// Fallback to default female voice if no custom voice ID
+				selectedVoiceID = "XrExE9yKIg1WjnnlVkGX"
 				audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
-				serviceUsed = "ElevenLabs"
+				serviceUsed = "ElevenLabs (Default)"
 			}
-		} else {
-			// Starter users get AWS Polly with default female voice
-			log.Printf("Using AWS Polly TTS for starter user with plan: %s", planName)
-
-			// Use default Polly voice for the language (Joanna for English, etc.)
+		case "elevenlabs":
+			// ElevenLabs users get male/female voice options
+			if req.VoiceType == "male" {
+				selectedVoiceID = "pqHfZKP75CvOlQylNhV4" // Male voice ID
+			} else {
+				selectedVoiceID = "XrExE9yKIg1WjnnlVkGX" // Female voice ID
+			}
+			audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
+			serviceUsed = "ElevenLabs"
+		case "polly", "":
+			// Polly users (default) get AWS Polly
+			log.Printf("Using AWS Polly TTS for user with voice preference: %s", voicePreference)
+			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, req.VoiceId, req.Speed)
+			serviceUsed = "AWS Polly"
+		default:
+			// Fallback to Polly for unknown voice preferences
+			log.Printf("Unknown voice preference '%s', falling back to Polly", voicePreference)
 			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, req.VoiceId, req.Speed)
 			serviceUsed = "AWS Polly"
 		}
