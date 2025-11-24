@@ -2144,11 +2144,12 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 		log.Println("=== TTS ENDPOINT CALLED ===")
 
 		var req struct {
-			Text      string `json:"text"`
-			Language  string `json:"language"`
-			VoiceId   string `json:"voiceId"`
-			Speed     string `json:"speed"`
-			VoiceType string `json:"voiceType"` // "male", "female", or "custom"
+			Text        string `json:"text"`
+			Language    string `json:"language"`
+			VoiceId     string `json:"voiceId"`
+			Speed       string `json:"speed"`
+			VoiceType   string `json:"voiceType"`   // "male", "female", or "custom"
+			SpeakerCode string `json:"speakerCode"` // Speaker code for audience requests
 		}
 		if err := c.BindJSON(&req); err != nil {
 			log.Printf("Error binding JSON request: %v", err)
@@ -2156,24 +2157,40 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		log.Printf("TTS Request - Text: %q, Language: %s, VoiceID: %s, VoiceType: %s", req.Text, req.Language, req.VoiceId, req.VoiceType)
+		log.Printf("TTS Request - Text: %q, Language: %s, VoiceID: %s, VoiceType: %s, SpeakerCode: %s", req.Text, req.Language, req.VoiceId, req.VoiceType, req.SpeakerCode)
 
-		// Get user's subscription information
+		// Get speaker's subscription information
+		// Priority: 1) speaker_code (for audience requests), 2) authenticated session (for speaker requests)
 		var planName string
 		var userVoiceID sql.NullString
 		var voicePreference string
 		session, _ := store.Get(c.Request, "session-name")
 		googleSub, ok := session.Values["google_sub"].(string)
 
-		if ok {
-			// Get user's plan, voice_id, and voice_preference from database
+		if req.SpeakerCode != "" {
+			// Audience request: look up speaker by speaker_code
+			log.Printf("Looking up speaker by speaker_code: %s", req.SpeakerCode)
+			err := db.QueryRow("SELECT plan_name, voice_id, voice_preference FROM speakers WHERE speaker_code = $1", req.SpeakerCode).Scan(&planName, &userVoiceID, &voicePreference)
+			if err != nil {
+				log.Printf("Error getting speaker subscription info by speaker_code: %v", err)
+				// Continue with default behavior
+				voicePreference = "polly" // Default fallback
+			} else {
+				log.Printf("Found speaker with voice_preference: %s, plan_name: %s", voicePreference, planName)
+			}
+		} else if ok {
+			// Speaker request: get user's plan, voice_id, and voice_preference from database
+			log.Printf("Looking up speaker by google_id: %s", googleSub)
 			err := db.QueryRow("SELECT plan_name, voice_id, voice_preference FROM speakers WHERE google_id = $1", googleSub).Scan(&planName, &userVoiceID, &voicePreference)
 			if err != nil {
 				log.Printf("Error getting user subscription info: %v", err)
 				// Continue with default behavior
 				voicePreference = "polly" // Default fallback
+			} else {
+				log.Printf("Found user with voice_preference: %s, plan_name: %s", voicePreference, planName)
 			}
 		} else {
+			log.Printf("No speaker_code or session found, defaulting to polly")
 			voicePreference = "polly" // Default fallback
 		}
 
@@ -2225,7 +2242,7 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		log.Printf("Successfully received response from %s", serviceUsed)
+		log.Printf("Successfully received response from %s. Voice preference used: %s, Plan: %s", serviceUsed, voicePreference, planName)
 
 		// Set headers for audio streaming
 		c.Header("Content-Type", "audio/mpeg")

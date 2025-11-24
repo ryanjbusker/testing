@@ -230,6 +230,7 @@
         const speedSelect = document.getElementById('playbackSpeed');
         const playbackRate = speedSelect.value;
         const voiceType = voiceTypeSelect.value || 'female'; // Default to female if not selected
+        const speakerCode = getSpeakerCodeFromUrl(); // Get speaker code to determine voice tier
         
         const response = await fetch('/polly-tts', {
           method: 'POST',
@@ -239,7 +240,8 @@
             language: lang,
             voiceId: getVoiceId(label),
             speed: playbackRate,
-            voiceType: voiceType
+            voiceType: voiceType,
+            speakerCode: speakerCode // Send speaker code so backend can look up speaker's voice preference
           })
         });
 
