@@ -109,8 +109,10 @@
   </div>
 
   <div id="translatedText" class="translated-center"></div>
+<span id="speaker-code-data" data-code="{{.speakerCode}}" style="display:none"></span>
 
   <script>
+    (function(){ var e = document.getElementById('speaker-code-data'); if (e) window.speakerCode = e.getAttribute('data-code'); })();
     let ws = null;
     const connectButton = document.getElementById('connectToggleButton');
     const translatedTextDiv = document.getElementById('translatedText');
@@ -126,16 +128,30 @@
 
     const subtitleQueue = [];
 
-    // Load available voices based on user's subscription
+    // Load available voices based on speaker's subscription
     async function loadAvailableVoices() {
       try {
-        const response = await fetch('/api/available-voices');
+        const speakerCode = getSpeakerCodeFromUrl(); // Get speaker code from URL or template
+        
+        // Validate speaker code before making API call
+        if (!speakerCode || speakerCode === 'audience' || speakerCode === '') {
+          console.log('No valid speaker code found, skipping voice options load');
+          return;
+        }
+        
+        const url = `/api/available-voices?speaker_code=${encodeURIComponent(speakerCode)}`;
+        const response = await fetch(url);
         if (response.ok) {
           const data = await response.json();
           availableVoices = data.voices;
           userPlan = data.plan;
           
-          // Show voice selection if user has professional or premium subscription
+          console.log('Available voices for speaker:', data.voices);
+          console.log('Speaker plan:', data.plan);
+          console.log('Voice preference:', data.voice_preference);
+          console.log('Has custom voice:', data.has_custom_voice);
+          
+          // Show voice selection if speaker has professional or premium subscription
           if (data.voices.male || data.voices.custom) {
             voiceTypeSelect.style.display = 'block';
             
@@ -143,7 +159,7 @@
             const customOption = voiceTypeSelect.querySelector('option[value="custom"]');
             if (data.has_custom_voice && data.voices.custom) {
               customOption.style.display = 'block';
-              console.log('Premium user: Custom voice available');
+              console.log('Speaker has custom voice available');
             } else {
               customOption.style.display = 'none';
             }
@@ -152,23 +168,35 @@
             const maleOption = voiceTypeSelect.querySelector('option[value="male"]');
             if (data.voices.male) {
               maleOption.style.display = 'block';
-              console.log('Professional/Premium user: Male voice available');
+              console.log('Speaker has male/female voice options available');
             } else {
               maleOption.style.display = 'none';
             }
             
-            console.log('Voice selection enabled for plan:', data.plan);
+            console.log('Voice selection enabled for speaker plan:', data.plan);
           } else {
-            console.log('Starter user: Only female voice available');
+            console.log('Speaker has standard voice only');
           }
+        } else {
+          console.error('Failed to load voice options:', response.status, response.statusText);
         }
       } catch (error) {
-        console.log('Could not load voice options:', error);
+        console.error('Error loading voice options:', error);
       }
     }
 
-    // Load voices when page loads
-    loadAvailableVoices();
+    // Check if speaker code is valid on page load and load voices
+    (function() {
+      const speakerCode = getSpeakerCodeFromUrl();
+      if (!speakerCode || speakerCode === 'audience' || speakerCode === '') {
+        translatedTextDiv.textContent = 'Please visit this page with a valid speaker code (e.g., /audience/12345)';
+        connectButton.disabled = true;
+        console.error('No valid speaker code found on page load');
+      } else {
+        // Load voices when page loads (only if we have a valid speaker code)
+        loadAvailableVoices();
+      }
+    })();
 
     function showSubtitle(text) {
       const wordCount = text.trim().split(/\s+/).length;
@@ -192,15 +220,28 @@
     }
 
     function getSpeakerCodeFromUrl() {
-      const pathParts = window.location.pathname.split('/');
-      return pathParts[pathParts.length - 1];
+      // First try to get speaker code from template variable (if available)
+      if (window.speakerCode && window.speakerCode !== 'audience' && window.speakerCode !== '') {
+        return window.speakerCode;
+      }
+      // Fall back to parsing URL
+      const pathParts = window.location.pathname.split('/').filter(part => part !== '');
+      const lastPart = pathParts[pathParts.length - 1];
+      // Don't return "audience" as speaker code - that means no code was provided
+      if (lastPart === 'audience' || lastPart === '') {
+        return null;
+      }
+      return lastPart;
     }
 
     function getVoiceId(label) {
+        // Normalize label by extracting base language name (e.g., "Spanish (Spain)" -> "Spanish")
+        const baseLabel = label.split('(')[0].trim();
+        
         // Map language labels to valid AWS Polly voice IDs
         const voiceMap = {
             'English': 'Joanna',
-            'Spanish': 'Lupe',
+            'Spanish': 'Lupe',  // Spanish female voice
             'French': 'Lea',
             'German': 'Vicki',
             'Italian': 'Bianca',
@@ -220,17 +261,25 @@
             'Turkish': 'Filiz'
         };
         
-        return voiceMap[label] || 'Joanna'; // Default to Joanna if language not found
+        // Try exact match first, then try base label
+        return voiceMap[label] || voiceMap[baseLabel] || 'Joanna'; // Default to Joanna if language not found
     }
 
     async function speakText(text, lang) {
       try {
+        const speakerCode = getSpeakerCodeFromUrl(); // Get speaker code to determine voice tier
+        
+        // Validate speaker code before making TTS request
+        if (!speakerCode || speakerCode === 'audience' || speakerCode === '') {
+          console.error('Cannot synthesize speech: Invalid speaker code:', speakerCode);
+          return;
+        }
+        
         const selectedOption = targetLanguage.options[targetLanguage.selectedIndex];
         const label = selectedOption.text;
         const speedSelect = document.getElementById('playbackSpeed');
         const playbackRate = speedSelect.value;
         const voiceType = voiceTypeSelect.value || 'female'; // Default to female if not selected
-        const speakerCode = getSpeakerCodeFromUrl(); // Get speaker code to determine voice tier
         
         const response = await fetch('/polly-tts', {
           method: 'POST',
@@ -304,6 +353,15 @@
     }
 
     function connectToStream() {
+      const speakerCode = getSpeakerCodeFromUrl();
+      
+      // Validate speaker code before connecting
+      if (!speakerCode || speakerCode === 'audience' || speakerCode === '') {
+        alert('Error: No speaker code found. Please visit the audience page with a valid speaker code (e.g., /audience/12345)');
+        console.error('Invalid speaker code:', speakerCode);
+        return;
+      }
+
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
@@ -313,12 +371,12 @@
         console.error("Failed to resume audio context:", err);
       });
 
-      const speakerCode = getSpeakerCodeFromUrl();
       const lang = targetLanguage.value;
       const isSecure = window.location.protocol === 'https:';
       const wsProtocol = isSecure ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${window.location.host}/ws?role=audience&lang=${lang}&speaker_code=${encodeURIComponent(speakerCode)}`;
 
+      console.log('Connecting to WebSocket with speaker code:', speakerCode);
       ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
@@ -328,22 +386,47 @@
         targetLanguage.disabled = true;
       };
 
-      ws.onclose = () => {
-        console.log('WebSocket closed');
+      ws.onclose = (event) => {
+        console.log('WebSocket closed', event.code, event.reason);
         connectButton.textContent = 'Connect to Stream';
         isConnected = false;
         targetLanguage.disabled = false;
         stopAudio();
-        translatedTextDiv.textContent = '';
+        
+        // Show error message if connection was closed unexpectedly (not by user)
+        if (event.code !== 1000 && event.code !== 1001) { // 1000 = normal closure, 1001 = going away
+          if (event.code === 1006) { // Abnormal closure (likely 404 or stream not found)
+            translatedTextDiv.textContent = 'Error: Could not connect to stream. Make sure the speaker has started streaming and you have the correct speaker code.';
+          } else {
+            translatedTextDiv.textContent = `Connection closed (code: ${event.code}). Please try again.`;
+          }
+        } else {
+          translatedTextDiv.textContent = '';
+        }
         subtitleQueue.length = 0;
       };
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
+        translatedTextDiv.textContent = 'Error: Failed to connect to stream. Make sure the speaker is currently streaming.';
+        connectButton.textContent = 'Connect to Stream';
+        isConnected = false;
+        targetLanguage.disabled = false;
       };
 
       ws.onmessage = async (event) => {
         const data = JSON.parse(event.data);
+        
+        // Handle error messages from server
+        if (data.error) {
+          console.error('Server error:', data.error);
+          translatedTextDiv.textContent = `Error: ${data.error}`;
+          if (data.error.includes('Stream not found') || data.error.includes('Speaker not found')) {
+            translatedTextDiv.textContent = 'Error: No active stream found. Make sure the speaker has started streaming and you have the correct speaker code.';
+          }
+          ws.close();
+          return;
+        }
 
         if (data.type === 'translation') {
           showSubtitle(data.text);

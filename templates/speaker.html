@@ -210,6 +210,11 @@
             console.log('Connecting to WebSocket:', wsUrl);
 
             ws = new WebSocket(wsUrl);
+            
+            // Disable button while connecting
+            startButton.disabled = true;
+            statusDiv.textContent = 'Connecting...';
+            
             ws.onopen = () => {
                 console.log('WebSocket connection opened');
                 statusDiv.textContent = 'Connected';
@@ -248,18 +253,24 @@
             ws.onclose = (event) => {
                 console.log('WebSocket closed:', event.code, event.reason);
                 statusDiv.textContent = 'Disconnected';
+                startButton.disabled = true;
                 resetUI();
             };
 
             ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
                 statusDiv.textContent = 'Error: Connection failed';
+                startButton.disabled = true;
                 resetUI();
             };
         }
 
         // Connect WebSocket when language changes
         sourceLanguage.addEventListener("change", () => {
+            // Disable button while reconnecting
+            startButton.disabled = true;
+            statusDiv.textContent = 'Connecting...';
+            
             if (isRecording) {
                 stopRecording();  // stops + closes audio context
                 setTimeout(() => {
@@ -294,7 +305,7 @@
 
         function resetUI() {
             stopRecording();
-            startButton.disabled = false;
+            startButton.disabled = true; // Disable when not connected
             startButton.textContent = 'Start Speaking';
             recognizedTextDiv.textContent = 'Your speech will appear here...';
             statusDiv.textContent = 'Not connected';
@@ -418,13 +429,6 @@
             } else {
                 stopRecording();
             }
-        });
-        sourceLanguage.addEventListener('change', () => {
-            // Reset and reconnect WebSocket when language changes
-            if (isRecording) {
-                stopRecording();
-            }
-            connectWebSocket();
         });
 
 

@@ -1086,7 +1086,8 @@ func main() {
 	// Add ElevenLabs voice creation endpoint
 	router.POST("/api/create-elevenlabs-voice", handleCreateElevenLabsVoice(db))
 	// Add endpoint to get available voices based on subscription
-	router.GET("/api/available-voices", authMiddleware(db), handleGetAvailableVoices(db))
+	// Can be called with speaker_code query param (no auth) or via session (with auth)
+	router.GET("/api/available-voices", handleGetAvailableVoices(db))
 
 	// Add delete account endpoint
 	router.POST("/delete-account", authMiddleware(db), handleDeleteAccount(db))
@@ -2139,6 +2140,89 @@ func getAvailableVoices(planName string, userVoiceID string) map[string]interfac
 	return voices
 }
 
+// getAvailableVoicesByPreference returns available voices based on voice_preference
+func getAvailableVoicesByPreference(planName string, userVoiceID string, voicePreference string) map[string]interface{} {
+	voices := make(map[string]interface{})
+
+	// Check voice_preference first to determine what voices are available
+	switch voicePreference {
+	case "custom":
+		// Custom voice users get all options including custom voice
+		voices["male"] = map[string]string{
+			"default": "pqHfZKP75CvOlQylNhV4", // Male voice ID
+		}
+		voices["female"] = map[string]string{
+			"default": "XrExE9yKIg1WjnnlVkGX", // Female voice ID
+		}
+		// Add custom voice if voice_id exists
+		if userVoiceID != "" {
+			voices["custom"] = map[string]string{
+				"custom": userVoiceID,
+			}
+		}
+	case "elevenlabs":
+		// ElevenLabs users get male/female options
+		voices["male"] = map[string]string{
+			"default": "pqHfZKP75CvOlQylNhV4", // Male voice ID
+		}
+		voices["female"] = map[string]string{
+			"default": "XrExE9yKIg1WjnnlVkGX", // Female voice ID
+		}
+	case "polly", "":
+		// Polly users get male/female option; backend picks Polly voice by language + gender
+		voices["female"] = map[string]string{
+			"default": "polly-female",
+		}
+		voices["male"] = map[string]string{
+			"default": "polly-male",
+		}
+	default:
+		// Fallback: use plan-based logic
+		log.Printf("Unknown voice_preference '%s', falling back to plan-based logic", voicePreference)
+		return getAvailableVoices(planName, userVoiceID)
+	}
+
+	return voices
+}
+
+// getPollyVoiceIDForGender returns the AWS Polly voice ID for the given language and gender.
+// Used so audience can choose male/female when the speaker uses Polly.
+func getPollyVoiceIDForGender(languageCode, voiceType string) string {
+	if voiceType != "male" {
+		return "" // Caller should use client's voiceId for female
+	}
+	// AWS Polly male voice IDs by language code (normalize to base code for lookup)
+	baseLang := languageCode
+	if len(languageCode) > 2 {
+		baseLang = languageCode[:2]
+	}
+	maleVoices := map[string]string{
+		"en": "Matthew",  // English
+		"es": "Enrique",  // Spanish
+		"fr": "Mathieu",  // French
+		"de": "Hans",    // German
+		"it": "Giorgio", // Italian
+		"pt": "Cristiano", // Portuguese
+		"ja": "Takumi",  // Japanese
+		"ko": "Seungjin", // Korean
+		"zh": "Matthew", // Chinese (fallback to Matthew)
+		"ru": "Maxim",   // Russian
+		"ar": "Matthew", // Arabic (no male in Polly, fallback to Matthew)
+		"hi": "Matthew", // Hindi (fallback)
+		"nl": "Ruben",   // Dutch male
+		"pl": "Jacek",   // Polish male
+		"tr": "Matthew", // Turkish (fallback)
+		"sv": "Erik",    // Swedish male
+		"da": "Mads",    // Danish male
+		"no": "Matthew", // Norwegian (fallback)
+		"fi": "Matthew", // Finnish (fallback)
+	}
+	if id, ok := maleVoices[baseLang]; ok {
+		return id
+	}
+	return "Matthew" // Default English male for unsupported languages
+}
+
 func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		log.Println("=== TTS ENDPOINT CALLED ===")
@@ -2204,16 +2288,19 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 
 		switch voicePreference {
 		case "custom":
-			// Custom voice users get their custom ElevenLabs voice
-			if userVoiceID.Valid && userVoiceID.String != "" {
+			// Custom voice users: use male/female ElevenLabs when audience selects that; use custom only when "custom" selected
+			if req.VoiceType == "custom" && userVoiceID.Valid && userVoiceID.String != "" {
 				selectedVoiceID = userVoiceID.String
 				audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
 				serviceUsed = "ElevenLabs (Custom Voice)"
+			} else if req.VoiceType == "male" {
+				selectedVoiceID = "pqHfZKP75CvOlQylNhV4"
+				audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
+				serviceUsed = "ElevenLabs (Male)"
 			} else {
-				// Fallback to default female voice if no custom voice ID
 				selectedVoiceID = "XrExE9yKIg1WjnnlVkGX"
 				audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
-				serviceUsed = "ElevenLabs (Default)"
+				serviceUsed = "ElevenLabs (Female)"
 			}
 		case "elevenlabs":
 			// ElevenLabs users get male/female voice options
@@ -2225,14 +2312,25 @@ func handlePollyTTS(db *sql.DB) gin.HandlerFunc {
 			audio, err = translation.SynthesizeSpeech(req.Text, selectedVoiceID, req.Language)
 			serviceUsed = "ElevenLabs"
 		case "polly", "":
-			// Polly users (default) get AWS Polly
+			// Polly users (default) get AWS Polly; respect audience's male/female choice
+			pollyVoiceID := req.VoiceId
+			if req.VoiceType == "male" {
+				pollyVoiceID = getPollyVoiceIDForGender(req.Language, "male")
+				log.Printf("Using AWS Polly male voice: %s for language: %s", pollyVoiceID, req.Language)
+			} else {
+				log.Printf("Using AWS Polly female voice: %s for language: %s (from client: %s)", pollyVoiceID, req.Language, req.VoiceId)
+			}
 			log.Printf("Using AWS Polly TTS for user with voice preference: %s", voicePreference)
-			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, req.VoiceId, req.Speed)
+			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, pollyVoiceID, req.Speed)
 			serviceUsed = "AWS Polly"
 		default:
-			// Fallback to Polly for unknown voice preferences
+			// Fallback to Polly for unknown voice preferences; respect male/female
+			pollyVoiceID := req.VoiceId
+			if req.VoiceType == "male" {
+				pollyVoiceID = getPollyVoiceIDForGender(req.Language, "male")
+			}
 			log.Printf("Unknown voice preference '%s', falling back to Polly", voicePreference)
-			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, req.VoiceId, req.Speed)
+			audio, err = translation.SynthesizeSpeechWithPolly(req.Text, req.Language, pollyVoiceID, req.Speed)
 			serviceUsed = "AWS Polly"
 		}
 
@@ -2450,34 +2548,64 @@ func createSubscriptionWithVoiceAddon(db *sql.DB, speaker *Speaker, plan, voice,
 
 func handleGetAvailableVoices(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// Get user from session
-		session, _ := store.Get(c.Request, "session-name")
-		googleSub, ok := session.Values["google_sub"].(string)
-		if !ok {
-			c.JSON(401, gin.H{"error": "Not authenticated"})
-			return
-		}
+		var planName, userVoiceID, voicePreference string
+		var err error
 
-		// Get user's plan and voice_id from database
-		var planName, userVoiceID string
-		err := db.QueryRow("SELECT plan_name, voice_id FROM speakers WHERE google_id = $1", googleSub).Scan(&planName, &userVoiceID)
-		if err != nil {
-			if err == sql.ErrNoRows {
-				c.JSON(404, gin.H{"error": "User not found"})
+		// Check if speaker_code is provided (for audience requests)
+		speakerCode := c.Query("speaker_code")
+		if speakerCode != "" {
+			// Look up speaker by speaker_code (no auth required for audience members)
+			log.Printf("Looking up available voices by speaker_code: %s", speakerCode)
+			var voiceID sql.NullString
+			err = db.QueryRow("SELECT plan_name, voice_id, voice_preference FROM speakers WHERE speaker_code = $1", speakerCode).Scan(&planName, &voiceID, &voicePreference)
+			if voiceID.Valid {
+				userVoiceID = voiceID.String
+			}
+			if err != nil {
+				if err == sql.ErrNoRows {
+					c.JSON(404, gin.H{"error": "Speaker not found"})
+					return
+				}
+				log.Printf("Error getting speaker subscription info by speaker_code: %v", err)
+				c.JSON(500, gin.H{"error": "Database error"})
 				return
 			}
-			log.Printf("Error getting user subscription info: %v", err)
-			c.JSON(500, gin.H{"error": "Database error"})
-			return
+		} else {
+			// Fall back to session-based lookup (for authenticated speaker requests)
+			session, _ := store.Get(c.Request, "session-name")
+			googleSub, ok := session.Values["google_sub"].(string)
+			if !ok {
+				c.JSON(401, gin.H{"error": "Not authenticated"})
+				return
+			}
+
+			log.Printf("Looking up available voices by google_id: %s", googleSub)
+			var voiceID sql.NullString
+			err = db.QueryRow("SELECT plan_name, voice_id, voice_preference FROM speakers WHERE google_id = $1", googleSub).Scan(&planName, &voiceID, &voicePreference)
+			if voiceID.Valid {
+				userVoiceID = voiceID.String
+			}
+			if err != nil {
+				if err == sql.ErrNoRows {
+					c.JSON(404, gin.H{"error": "User not found"})
+					return
+				}
+				log.Printf("Error getting user subscription info: %v", err)
+				c.JSON(500, gin.H{"error": "Database error"})
+				return
+			}
 		}
 
-		// Get available voices based on subscription tier
-		voices := getAvailableVoices(planName, userVoiceID)
+		log.Printf("Found speaker - plan: %s, voice_preference: %s, has_voice_id: %v", planName, voicePreference, userVoiceID != "")
+
+		// Get available voices based on voice_preference and subscription tier
+		voices := getAvailableVoicesByPreference(planName, userVoiceID, voicePreference)
 
 		c.JSON(200, gin.H{
 			"voices":           voices,
 			"plan":             planName,
 			"has_custom_voice": userVoiceID != "",
+			"voice_preference": voicePreference,
 		})
 	}
 }
