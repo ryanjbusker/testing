@@ -156,12 +156,25 @@
             voiceTypeSelect.style.display = 'block';
             
             // Show/hide custom voice option based on availability
-            const customOption = voiceTypeSelect.querySelector('option[value="custom"]');
+            let customOption = voiceTypeSelect.querySelector('option[value="custom"]');
             if (data.has_custom_voice && data.voices.custom) {
-              customOption.style.display = 'block';
+              // Show the custom option
+              if (!customOption) {
+                // Recreate if it was removed
+                customOption = document.createElement('option');
+                customOption.value = 'custom';
+                customOption.textContent = 'My Custom Voice';
+                voiceTypeSelect.appendChild(customOption);
+              } else {
+                // Remove display:none style to show it
+                customOption.removeAttribute('style');
+              }
               console.log('Speaker has custom voice available');
             } else {
-              customOption.style.display = 'none';
+              // Hide the custom option
+              if (customOption) {
+                customOption.style.display = 'none';
+              }
             }
             
             // Show/hide male voice option based on subscription

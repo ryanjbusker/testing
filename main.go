@@ -2640,13 +2640,16 @@ func handleCreateElevenLabsVoice(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		// Store the voice_id in the speakers table
-		_, err = db.Exec("UPDATE speakers SET voice_id = $1 WHERE google_id = $2", voiceID, googleSub)
+		// Store the voice_id in the speakers table and set voice_preference to 'custom'
+		// This ensures the custom voice option appears in the audience page
+		_, err = db.Exec("UPDATE speakers SET voice_id = $1, voice_preference = 'custom' WHERE google_id = $2", voiceID, googleSub)
 		if err != nil {
+			log.Printf("Error saving voice_id and updating voice_preference: %v", err)
 			c.JSON(500, gin.H{"error": "Failed to save voice_id"})
 			return
 		}
 
+		log.Printf("Successfully saved custom voice_id %s for user %s and set voice_preference to 'custom'", voiceID, googleSub)
 		c.JSON(200, gin.H{"voice_id": voiceID})
 	}
 }
