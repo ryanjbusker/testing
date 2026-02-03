@@ -1507,10 +1507,21 @@ func main() {
 		}
 
 		paymentService := NewPaymentService(db)
-		if err := paymentService.CreateStripeCustomer(speaker); err != nil {
-			log.Printf("Error creating Stripe customer: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create payment account"})
-			return
+		// Skip Stripe customer creation in local development
+		if !isLocalDevelopment() {
+			if err := paymentService.CreateStripeCustomer(speaker); err != nil {
+				log.Printf("Error creating Stripe customer: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create payment account"})
+				return
+			}
+		} else {
+			log.Printf("Local development mode: Skipping Stripe customer creation")
+			// Set a mock Stripe customer ID for local dev
+			speaker.StripeCustomerID = "local_dev_customer_" + speaker.SpeakerCode
+			_, err := db.Exec("UPDATE speakers SET stripe_customer_id = $1 WHERE id = $2", speaker.StripeCustomerID, speaker.ID)
+			if err != nil {
+				log.Printf("Warning: Failed to set mock Stripe customer ID: %v", err)
+			}
 		}
 
 		// Create subscription based on selected plan and voice preference
@@ -2197,25 +2208,25 @@ func getPollyVoiceIDForGender(languageCode, voiceType string) string {
 		baseLang = languageCode[:2]
 	}
 	maleVoices := map[string]string{
-		"en": "Matthew",  // English
-		"es": "Enrique",  // Spanish
-		"fr": "Mathieu",  // French
-		"de": "Hans",    // German
-		"it": "Giorgio", // Italian
+		"en": "Matthew",   // English
+		"es": "Enrique",   // Spanish
+		"fr": "Mathieu",   // French
+		"de": "Hans",      // German
+		"it": "Giorgio",   // Italian
 		"pt": "Cristiano", // Portuguese
-		"ja": "Takumi",  // Japanese
-		"ko": "Seungjin", // Korean
-		"zh": "Matthew", // Chinese (fallback to Matthew)
-		"ru": "Maxim",   // Russian
-		"ar": "Matthew", // Arabic (no male in Polly, fallback to Matthew)
-		"hi": "Matthew", // Hindi (fallback)
-		"nl": "Ruben",   // Dutch male
-		"pl": "Jacek",   // Polish male
-		"tr": "Matthew", // Turkish (fallback)
-		"sv": "Erik",    // Swedish male
-		"da": "Mads",    // Danish male
-		"no": "Matthew", // Norwegian (fallback)
-		"fi": "Matthew", // Finnish (fallback)
+		"ja": "Takumi",    // Japanese
+		"ko": "Seungjin",  // Korean
+		"zh": "Matthew",   // Chinese (fallback to Matthew)
+		"ru": "Maxim",     // Russian
+		"ar": "Matthew",   // Arabic (no male in Polly, fallback to Matthew)
+		"hi": "Matthew",   // Hindi (fallback)
+		"nl": "Ruben",     // Dutch male
+		"pl": "Jacek",     // Polish male
+		"tr": "Matthew",   // Turkish (fallback)
+		"sv": "Erik",      // Swedish male
+		"da": "Mads",      // Danish male
+		"no": "Matthew",   // Norwegian (fallback)
+		"fi": "Matthew",   // Finnish (fallback)
 	}
 	if id, ok := maleVoices[baseLang]; ok {
 		return id
@@ -2430,8 +2441,34 @@ func generateUniqueSpeakerCode(db *sql.DB) (string, error) {
 	return "", fmt.Errorf("failed to generate unique speaker code after %d attempts", maxAttempts)
 }
 
+// isLocalDevelopment checks if we're running in local development mode
+func isLocalDevelopment() bool {
+	env := os.Getenv("ENV")
+	port := os.Getenv("PORT")
+	// Check if ENV is not "production" or if PORT is default localhost port
+	return env != "production" || port == "8080" || port == ""
+}
+
 // createSubscriptionWithVoiceAddon creates a subscription with both main plan and voice add-on
 func createSubscriptionWithVoiceAddon(db *sql.DB, speaker *Speaker, plan, voice, paymentMethodID string) error {
+	// Skip Stripe operations in local development
+	if isLocalDevelopment() {
+		log.Printf("Local development mode: Skipping Stripe subscription creation for plan: %s, voice: %s", plan, voice)
+		// Update speaker with plan and voice preference without Stripe subscription
+		_, err := db.Exec(`
+			UPDATE speakers 
+			SET payment_status = 'active', plan_name = $1, voice_preference = $2
+			WHERE id = $3
+		`, plan, voice, speaker.ID)
+		if err != nil {
+			return fmt.Errorf("error updating speaker status: %v", err)
+		}
+		speaker.PaymentStatus = "active"
+		speaker.PlanName = plan
+		log.Printf("Local dev: Set payment_status='active', plan_name='%s', voice_preference='%s' for speaker ID %d", plan, voice, speaker.ID)
+		return nil
+	}
+
 	// Get the appropriate price ID based on the plan
 	var priceID string
 	switch plan {
